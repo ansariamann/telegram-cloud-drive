@@ -9,7 +9,6 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiWhoamiRouteImport } from './routes/api/whoami'
 import { Route as ApiUploadFinalizeRouteImport } from './routes/api/upload-finalize'
 import { Route as ApiUploadChunkRouteImport } from './routes/api/upload-chunk'
@@ -21,11 +20,6 @@ import { Route as ApiFilesIdRouteImport } from './routes/api/files.$id'
 import { Route as ApiFilesIdThumbRouteImport } from './routes/api/files.$id.thumb'
 import { Route as ApiFilesIdStreamRouteImport } from './routes/api/files.$id.stream'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiWhoamiRoute = ApiWhoamiRouteImport.update({
   id: '/api/whoami',
   path: '/api/whoami',
@@ -78,7 +72,6 @@ const ApiFilesIdStreamRoute = ApiFilesIdStreamRouteImport.update({
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
   '/api/files': typeof ApiFilesRouteWithChildren
   '/api/lock': typeof ApiLockRoute
   '/api/status': typeof ApiStatusRoute
@@ -91,7 +84,6 @@ export interface FileRoutesByFullPath {
   '/api/files/$id/thumb': typeof ApiFilesIdThumbRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
   '/api/files': typeof ApiFilesRouteWithChildren
   '/api/lock': typeof ApiLockRoute
   '/api/status': typeof ApiStatusRoute
@@ -105,7 +97,6 @@ export interface FileRoutesByTo {
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
   '/api/files': typeof ApiFilesRouteWithChildren
   '/api/lock': typeof ApiLockRoute
   '/api/status': typeof ApiStatusRoute
@@ -120,7 +111,6 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | '/'
     | '/api/files'
     | '/api/lock'
     | '/api/status'
@@ -133,7 +123,6 @@ export interface FileRouteTypes {
     | '/api/files/$id/thumb'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
     | '/api/files'
     | '/api/lock'
     | '/api/status'
@@ -146,7 +135,6 @@ export interface FileRouteTypes {
     | '/api/files/$id/thumb'
   id:
     | '__root__'
-    | '/'
     | '/api/files'
     | '/api/lock'
     | '/api/status'
@@ -160,7 +148,6 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
   ApiFilesRoute: typeof ApiFilesRouteWithChildren
   ApiLockRoute: typeof ApiLockRoute
   ApiStatusRoute: typeof ApiStatusRoute
@@ -172,13 +159,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/whoami': {
       id: '/api/whoami'
       path: '/api/whoami'
@@ -279,7 +259,6 @@ const ApiFilesRouteWithChildren = ApiFilesRoute._addFileChildren(
 )
 
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
   ApiFilesRoute: ApiFilesRouteWithChildren,
   ApiLockRoute: ApiLockRoute,
   ApiStatusRoute: ApiStatusRoute,
