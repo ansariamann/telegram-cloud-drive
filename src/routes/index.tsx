@@ -1,24 +1,21 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { FileManager } from "@/components/file-manager";
+import { useUnlockStatus } from "@/hooks/use-unlock";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
-  component: Index,
+  component: Home,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
-function Index() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
+function Home() {
+  const nav = useNavigate();
+  const { data, isLoading } = useUnlockStatus();
+  useEffect(() => {
+    if (!isLoading && data && !data.unlocked) {
+      nav({ to: "/unlock" });
+    }
+  }, [isLoading, data, nav]);
+  if (isLoading) return <div className="min-h-screen bg-background" />;
+  if (!data?.unlocked) return null;
+  return <FileManager />;
 }
