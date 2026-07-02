@@ -14,6 +14,7 @@ export const Route = createFileRoute("/api/upload-finalize")({
           size: number;
           parts: Array<{ index: number; file_id: string; message_id: number; size: number }>;
           thumb_file_id?: string | null;
+          folder_id?: string | null;
         };
         const parts = [...body.parts].sort((a, b) => a.index - b.index);
         const row = await insertFile({
@@ -24,6 +25,7 @@ export const Route = createFileRoute("/api/upload-finalize")({
           parts,
           tags: [],
           thumb_file_id: body.thumb_file_id ?? null,
+          folder_id: body.folder_id ?? null,
         });
         return Response.json({ file: row });
       },

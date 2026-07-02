@@ -16,6 +16,7 @@ export type FileRow = {
   parts: FilePart[];
   tags: string[];
   thumb_file_id: string | null;
+  folder_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -24,10 +25,18 @@ export async function listFiles(opts: {
   q?: string;
   kind?: string;
   sort?: "created_desc" | "created_asc" | "name_asc" | "name_desc" | "size_desc" | "size_asc";
+  folderId?: string | null;
 }): Promise<FileRow[]> {
   let query = supabaseAdmin.from("files").select("*");
   if (opts.q) query = query.ilike("filename", `%${opts.q}%`);
   if (opts.kind && opts.kind !== "all") query = query.eq("kind", opts.kind);
+  if (opts.folderId !== undefined) {
+    if (opts.folderId === null) {
+      query = query.is("folder_id", null);
+    } else {
+      query = query.eq("folder_id", opts.folderId);
+    }
+  }
   const sort = opts.sort ?? "created_desc";
   const [col, dir] =
     sort === "created_desc"
@@ -59,7 +68,10 @@ export async function insertFile(row: Omit<FileRow, "id" | "created_at" | "updat
   return data as unknown as FileRow;
 }
 
-export async function updateFile(id: string, patch: Partial<Pick<FileRow, "filename" | "tags">>): Promise<FileRow> {
+export async function updateFile(
+  id: string,
+  patch: Partial<Pick<FileRow, "filename" | "tags" | "folder_id">>
+): Promise<FileRow> {
   const { data, error } = await supabaseAdmin
     .from("files")
     .update(patch as never)

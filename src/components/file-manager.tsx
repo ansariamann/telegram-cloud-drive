@@ -15,11 +15,16 @@ import {
   File as FileIcon,
   Download,
   Trash2,
-  Eye,
-  Pencil,
-  X,
   Loader2,
   Filter,
+  FolderPlus,
+  Folder,
+  ChevronRight,
+  Home,
+  X,
+  MoreHorizontal,
+  Pencil,
+  FolderInput,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,8 +32,16 @@ import { Progress } from "@/components/ui/progress";
 import { formatBytes, formatDate } from "@/lib/format";
 import { uploadFile, type UploadProgress } from "@/lib/upload";
 import { FilePreview } from "@/components/file-preview";
+import { NewFolderDialog } from "@/components/new-folder-dialog";
+import { FolderPicker } from "@/components/folder-picker";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type FileRow = {
   id: string;
@@ -39,8 +52,19 @@ type FileRow = {
   tags: string[];
   thumb_file_id: string | null;
   created_at: string;
+  folder_id: string | null;
   parts: Array<{ index: number; size: number }>;
 };
+
+type FolderRow = {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type Breadcrumb = { id: string; name: string };
 
 type KindFilter = "all" | "image" | "video" | "audio" | "pdf" | "archive" | "other";
 type SortKey = "created_desc" | "created_asc" | "name_asc" | "name_desc" | "size_desc" | "size_asc";
@@ -90,13 +114,37 @@ export function FileManager() {
   const [uploads, setUploads] = useState<Uploading[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Folder state
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [movePickerOpen, setMovePickerOpen] = useState(false);
+  const [moveFileId, setMoveFileId] = useState<string | null>(null);
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  const [folderNewName, setFolderNewName] = useState("");
+
+  // Fetch folders for current level
+  const foldersQuery = useQuery({
+    queryKey: ["folders", currentFolderId],
+    queryFn: async () => {
+      const param = currentFolderId ?? "root";
+      const res = await fetch(`/api/folders?parent_id=${param}`);
+      if (!res.ok) throw new Error("Failed");
+      const j = (await res.json()) as { folders: FolderRow[] };
+      return j.folders;
+    },
+    enabled: !q, // Don't fetch folders when searching
+  });
+
+  // Fetch files
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (kind !== "all") params.set("kind", kind);
   params.set("sort", sort);
+  if (!q) params.set("folder_id", currentFolderId ?? "root");
 
   const filesQuery = useQuery({
-    queryKey: ["files", q, kind, sort],
+    queryKey: ["files", q, kind, sort, currentFolderId],
     queryFn: async () => {
       const res = await fetch(`/api/files?${params.toString()}`);
       if (!res.ok) throw new Error("Failed");
@@ -117,6 +165,70 @@ export function FileManager() {
     onError: () => toast.error("Delete failed"),
   });
 
+  const deleteFolderMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/folders/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+    },
+    onSuccess: () => {
+      toast.success("Folder deleted");
+      qc.invalidateQueries({ queryKey: ["folders"] });
+      qc.invalidateQueries({ queryKey: ["files"] });
+    },
+    onError: () => toast.error("Failed to delete folder"),
+  });
+
+  const renameFolderMutation = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const res = await fetch(`/api/folders/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error("Rename failed");
+    },
+    onSuccess: () => {
+      toast.success("Folder renamed");
+      setRenamingFolderId(null);
+      qc.invalidateQueries({ queryKey: ["folders"] });
+    },
+    onError: () => toast.error("Failed to rename folder"),
+  });
+
+  const moveFileMutation = useMutation({
+    mutationFn: async ({ fileId, folderId }: { fileId: string; folderId: string | null }) => {
+      const res = await fetch(`/api/files/${fileId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ folder_id: folderId }),
+      });
+      if (!res.ok) throw new Error("Move failed");
+    },
+    onSuccess: () => {
+      toast.success("File moved");
+      qc.invalidateQueries({ queryKey: ["files"] });
+    },
+    onError: () => toast.error("Failed to move file"),
+  });
+
+  // Navigate into folder
+  const navigateToFolder = useCallback(async (folderId: string | null) => {
+    setCurrentFolderId(folderId);
+    if (folderId === null) {
+      setBreadcrumbs([]);
+    } else {
+      try {
+        const res = await fetch(`/api/folders/${folderId}`);
+        if (res.ok) {
+          const data = (await res.json()) as { folder: FolderRow; breadcrumbs: FolderRow[] };
+          setBreadcrumbs(data.breadcrumbs.map((b) => ({ id: b.id, name: b.name })));
+        }
+      } catch {
+        // Keep current breadcrumbs on error
+      }
+    }
+  }, []);
+
   const startUpload = useCallback(
     async (files: File[]) => {
       for (const file of files) {
@@ -125,7 +237,7 @@ export function FileManager() {
         try {
           await uploadFile(file, (p) => {
             setUploads((u) => u.map((x) => (x.id === uploadId ? { ...x, progress: p } : x)));
-          });
+          }, currentFolderId);
           setUploads((u) => u.map((x) => (x.id === uploadId ? { ...x, done: true } : x)));
           toast.success(`Uploaded ${file.name}`);
           qc.invalidateQueries({ queryKey: ["files"] });
@@ -137,7 +249,7 @@ export function FileManager() {
         }
       }
     },
-    [qc],
+    [qc, currentFolderId],
   );
 
   // drag & drop overlay
@@ -176,7 +288,9 @@ export function FileManager() {
   }, [startUpload]);
 
   const files = filesQuery.data ?? [];
+  const folders = (!q ? foldersQuery.data : null) ?? [];
   const totalSize = useMemo(() => files.reduce((n, f) => n + Number(f.size_bytes), 0), [files]);
+  const isSearching = !!q;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -241,6 +355,10 @@ export function FileManager() {
             >
               <SettingsIcon className="h-4 w-4" />
             </Link>
+            <Button size="sm" variant="outline" onClick={() => setNewFolderOpen(true)}>
+              <FolderPlus className="h-4 w-4 mr-1.5" />
+              Folder
+            </Button>
             <Button size="sm" onClick={() => fileInputRef.current?.click()}>
               <Upload className="h-4 w-4 mr-1.5" />
               Upload
@@ -281,6 +399,38 @@ export function FileManager() {
             </div>
           </div>
         </div>
+
+        {/* Breadcrumb bar */}
+        {!isSearching && (
+          <div className="border-t border-border bg-muted/20">
+            <div className="mx-auto flex max-w-[1600px] items-center gap-1 overflow-x-auto px-4 sm:px-6 py-1.5 text-xs">
+              <button
+                onClick={() => navigateToFolder(null)}
+                className={`shrink-0 flex items-center gap-1 px-2 py-1 rounded-md transition-colors hover:bg-muted ${
+                  currentFolderId === null ? "text-foreground font-medium" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Home className="h-3.5 w-3.5" />
+                Vault
+              </button>
+              {breadcrumbs.map((crumb) => (
+                <span key={crumb.id} className="flex items-center gap-1 shrink-0">
+                  <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                  <button
+                    onClick={() => navigateToFolder(crumb.id)}
+                    className={`px-2 py-1 rounded-md transition-colors hover:bg-muted ${
+                      currentFolderId === crumb.id
+                        ? "text-foreground font-medium"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {crumb.name}
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </header>
 
       <main className="mx-auto max-w-[1600px] px-4 sm:px-6 py-6">
@@ -288,10 +438,34 @@ export function FileManager() {
           <div className="flex items-center justify-center py-24 text-muted-foreground text-sm">
             <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Loading…
           </div>
-        ) : files.length === 0 ? (
-          <EmptyState onPick={() => fileInputRef.current?.click()} />
+        ) : folders.length === 0 && files.length === 0 ? (
+          <EmptyState onPick={() => fileInputRef.current?.click()} onNewFolder={() => setNewFolderOpen(true)} isRoot={currentFolderId === null} />
         ) : view === "grid" ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            {/* Folders first */}
+            {folders.map((f) => (
+              <FolderGridCard
+                key={f.id}
+                folder={f}
+                onOpen={() => navigateToFolder(f.id)}
+                onRename={() => {
+                  setRenamingFolderId(f.id);
+                  setFolderNewName(f.name);
+                }}
+                onDelete={() => {
+                  if (confirm(`Delete folder "${f.name}"? Sub-folders will also be deleted. Files inside will be moved to root.`))
+                    deleteFolderMutation.mutate(f.id);
+                }}
+                isRenaming={renamingFolderId === f.id}
+                renameName={folderNewName}
+                onRenameChange={setFolderNewName}
+                onRenameSubmit={() => {
+                  if (folderNewName.trim()) renameFolderMutation.mutate({ id: f.id, name: folderNewName.trim() });
+                }}
+                onRenameCancel={() => setRenamingFolderId(null)}
+              />
+            ))}
+            {/* Then files */}
             {files.map((f) => (
               <GridCard
                 key={f.id}
@@ -300,16 +474,40 @@ export function FileManager() {
                 onDelete={() => {
                   if (confirm(`Delete ${f.filename}?`)) deleteMutation.mutate(f.id);
                 }}
+                onMove={() => {
+                  setMoveFileId(f.id);
+                  setMovePickerOpen(true);
+                }}
               />
             ))}
           </div>
         ) : (
           <ListView
+            folders={folders}
             files={files}
-            onOpen={(id) => setPreviewId(id)}
-            onDelete={(id, name) => {
+            onOpenFile={(id) => setPreviewId(id)}
+            onOpenFolder={(id) => navigateToFolder(id)}
+            onDeleteFile={(id, name) => {
               if (confirm(`Delete ${name}?`)) deleteMutation.mutate(id);
             }}
+            onDeleteFolder={(id, name) => {
+              if (confirm(`Delete folder "${name}"?`)) deleteFolderMutation.mutate(id);
+            }}
+            onMoveFile={(id) => {
+              setMoveFileId(id);
+              setMovePickerOpen(true);
+            }}
+            onRenameFolder={(id, name) => {
+              setRenamingFolderId(id);
+              setFolderNewName(name);
+            }}
+            renamingFolderId={renamingFolderId}
+            folderNewName={folderNewName}
+            onFolderNewNameChange={setFolderNewName}
+            onFolderRenameSubmit={(id) => {
+              if (folderNewName.trim()) renameFolderMutation.mutate({ id, name: folderNewName.trim() });
+            }}
+            onFolderRenameCancel={() => setRenamingFolderId(null)}
           />
         )}
       </main>
@@ -361,30 +559,131 @@ export function FileManager() {
           <div className="rounded-2xl border-2 border-dashed border-primary px-16 py-12 text-center">
             <Upload className="h-10 w-10 mx-auto text-primary mb-3" />
             <p className="text-lg font-semibold">Drop to upload</p>
-            <p className="text-xs text-muted-foreground mt-1">Any file, any size (auto-chunked)</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {currentFolderId ? "Uploading to current folder" : "Uploading to root"}
+            </p>
           </div>
         </div>
       )}
 
       {previewId && <FilePreview fileId={previewId} onClose={() => setPreviewId(null)} />}
+
+      <NewFolderDialog
+        open={newFolderOpen}
+        onOpenChange={setNewFolderOpen}
+        parentId={currentFolderId}
+        onCreated={() => qc.invalidateQueries({ queryKey: ["folders"] })}
+      />
+
+      <FolderPicker
+        open={movePickerOpen}
+        onOpenChange={setMovePickerOpen}
+        currentFolderId={currentFolderId}
+        onSelect={(folderId) => {
+          if (moveFileId) {
+            moveFileMutation.mutate({ fileId: moveFileId, folderId });
+            setMoveFileId(null);
+          }
+        }}
+      />
     </div>
   );
 }
 
-function EmptyState({ onPick }: { onPick: () => void }) {
+function EmptyState({ onPick, onNewFolder, isRoot }: { onPick: () => void; onNewFolder: () => void; isRoot: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
       <div className="h-14 w-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-4">
         <Upload className="h-6 w-6" />
       </div>
-      <h2 className="text-lg font-semibold">Vault is empty</h2>
+      <h2 className="text-lg font-semibold">{isRoot ? "Vault is empty" : "This folder is empty"}</h2>
       <p className="text-sm text-muted-foreground mt-1 max-w-sm">
         Drop files anywhere on this page, or click Upload. Everything goes into your private Telegram group.
       </p>
-      <Button className="mt-5" onClick={onPick}>
-        <Upload className="h-4 w-4 mr-1.5" />
-        Choose files
-      </Button>
+      <div className="mt-5 flex gap-2">
+        <Button variant="outline" onClick={onNewFolder}>
+          <FolderPlus className="h-4 w-4 mr-1.5" />
+          New Folder
+        </Button>
+        <Button onClick={onPick}>
+          <Upload className="h-4 w-4 mr-1.5" />
+          Choose files
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function FolderGridCard({
+  folder,
+  onOpen,
+  onRename,
+  onDelete,
+  isRenaming,
+  renameName,
+  onRenameChange,
+  onRenameSubmit,
+  onRenameCancel,
+}: {
+  folder: FolderRow;
+  onOpen: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+  isRenaming: boolean;
+  renameName: string;
+  onRenameChange: (name: string) => void;
+  onRenameSubmit: () => void;
+  onRenameCancel: () => void;
+}) {
+  return (
+    <div className="group relative rounded-lg border border-border bg-card overflow-hidden hover:border-primary/40 transition-colors">
+      <button onClick={onOpen} className="block w-full text-left">
+        <div className="aspect-square bg-muted/30 flex items-center justify-center">
+          <Folder className="h-12 w-12 text-primary/60" />
+        </div>
+        <div className="p-2">
+          {isRenaming ? (
+            <input
+              value={renameName}
+              onChange={(e) => onRenameChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onRenameSubmit();
+                if (e.key === "Escape") onRenameCancel();
+              }}
+              onBlur={onRenameCancel}
+              onClick={(e) => e.stopPropagation()}
+              autoFocus
+              className="w-full text-xs font-medium bg-transparent border-b border-primary outline-none"
+            />
+          ) : (
+            <div className="text-xs font-medium truncate">{folder.name}</div>
+          )}
+          <div className="mt-0.5 text-[10px] text-muted-foreground">Folder</div>
+        </div>
+      </button>
+      <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              onClick={(e) => e.stopPropagation()}
+              className="h-7 w-7 flex items-center justify-center rounded-md bg-background/80 backdrop-blur border border-border text-muted-foreground hover:text-foreground"
+              aria-label="Folder actions"
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onRename}>
+              <Pencil className="h-3.5 w-3.5 mr-2" />
+              Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive">
+              <Trash2 className="h-3.5 w-3.5 mr-2" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </div>
   );
 }
@@ -393,10 +692,12 @@ function GridCard({
   file,
   onOpen,
   onDelete,
+  onMove,
 }: {
   file: FileRow;
   onOpen: () => void;
   onDelete: () => void;
+  onMove: () => void;
 }) {
   const Icon = kindIcon(file.kind);
   const hasThumb = !!file.thumb_file_id || file.kind === "image";
@@ -440,7 +741,14 @@ function GridCard({
           <Download className="h-3.5 w-3.5" />
         </a>
         <button
-          onClick={onDelete}
+          onClick={(e) => { e.stopPropagation(); onMove(); }}
+          className="h-7 w-7 flex items-center justify-center rounded-md bg-background/80 backdrop-blur border border-border text-muted-foreground hover:text-foreground"
+          aria-label="Move"
+        >
+          <FolderInput className="h-3.5 w-3.5" />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
           className="h-7 w-7 flex items-center justify-center rounded-md bg-background/80 backdrop-blur border border-border text-muted-foreground hover:text-destructive"
           aria-label="Delete"
         >
@@ -452,13 +760,33 @@ function GridCard({
 }
 
 function ListView({
+  folders,
   files,
-  onOpen,
-  onDelete,
+  onOpenFile,
+  onOpenFolder,
+  onDeleteFile,
+  onDeleteFolder,
+  onMoveFile,
+  onRenameFolder,
+  renamingFolderId,
+  folderNewName,
+  onFolderNewNameChange,
+  onFolderRenameSubmit,
+  onFolderRenameCancel,
 }: {
+  folders: FolderRow[];
   files: FileRow[];
-  onOpen: (id: string) => void;
-  onDelete: (id: string, name: string) => void;
+  onOpenFile: (id: string) => void;
+  onOpenFolder: (id: string) => void;
+  onDeleteFile: (id: string, name: string) => void;
+  onDeleteFolder: (id: string, name: string) => void;
+  onMoveFile: (id: string) => void;
+  onRenameFolder: (id: string, name: string) => void;
+  renamingFolderId: string | null;
+  folderNewName: string;
+  onFolderNewNameChange: (name: string) => void;
+  onFolderRenameSubmit: (id: string) => void;
+  onFolderRenameCancel: () => void;
 }) {
   return (
     <div className="rounded-lg border border-border overflow-hidden">
@@ -469,17 +797,69 @@ function ListView({
             <th className="text-left px-3 py-2 font-medium w-24">Kind</th>
             <th className="text-right px-3 py-2 font-medium w-24 tabular-nums">Size</th>
             <th className="text-right px-3 py-2 font-medium w-32 tabular-nums">Added</th>
-            <th className="w-24" />
+            <th className="w-28" />
           </tr>
         </thead>
         <tbody>
+          {/* Folders first */}
+          {folders.map((f) => (
+            <tr
+              key={`folder-${f.id}`}
+              className="border-t border-border hover:bg-muted/20 cursor-pointer"
+              onClick={() => onOpenFolder(f.id)}
+            >
+              <td className="px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Folder className="h-4 w-4 shrink-0 text-primary/70" />
+                  {renamingFolderId === f.id ? (
+                    <input
+                      value={folderNewName}
+                      onChange={(e) => onFolderNewNameChange(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") onFolderRenameSubmit(f.id);
+                        if (e.key === "Escape") onFolderRenameCancel();
+                      }}
+                      onBlur={onFolderRenameCancel}
+                      onClick={(e) => e.stopPropagation()}
+                      autoFocus
+                      className="flex-1 bg-transparent border-b border-primary outline-none text-sm"
+                    />
+                  ) : (
+                    <span className="truncate font-medium">{f.name}</span>
+                  )}
+                </div>
+              </td>
+              <td className="px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">folder</td>
+              <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">—</td>
+              <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{formatDate(f.created_at)}</td>
+              <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                <div className="flex justify-end gap-1">
+                  <button
+                    onClick={() => onRenameFolder(f.id, f.name)}
+                    className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+                    aria-label="Rename folder"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => onDeleteFolder(f.id, f.name)}
+                    className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-muted"
+                    aria-label="Delete folder"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+          {/* Then files */}
           {files.map((f) => {
             const Icon = kindIcon(f.kind);
             return (
               <tr
                 key={f.id}
                 className="border-t border-border hover:bg-muted/20 cursor-pointer"
-                onClick={() => onOpen(f.id)}
+                onClick={() => onOpenFile(f.id)}
               >
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2 min-w-0">
@@ -502,7 +882,14 @@ function ListView({
                       <Download className="h-3.5 w-3.5" />
                     </a>
                     <button
-                      onClick={() => onDelete(f.id, f.filename)}
+                      onClick={() => onMoveFile(f.id)}
+                      className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+                      aria-label="Move"
+                    >
+                      <FolderInput className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => onDeleteFile(f.id, f.filename)}
                       className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-muted"
                       aria-label="Delete"
                     >

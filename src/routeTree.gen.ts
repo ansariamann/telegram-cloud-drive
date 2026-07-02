@@ -18,7 +18,9 @@ import { Route as ApiUploadChunkRouteImport } from './routes/api/upload-chunk'
 import { Route as ApiUnlockRouteImport } from './routes/api/unlock'
 import { Route as ApiStatusRouteImport } from './routes/api/status'
 import { Route as ApiLockRouteImport } from './routes/api/lock'
+import { Route as ApiFoldersRouteImport } from './routes/api/folders'
 import { Route as ApiFilesRouteImport } from './routes/api/files'
+import { Route as ApiFoldersIdRouteImport } from './routes/api/folders.$id'
 import { Route as ApiFilesIdRouteImport } from './routes/api/files.$id'
 import { Route as ApiFilesIdThumbRouteImport } from './routes/api/files.$id.thumb'
 import { Route as ApiFilesIdStreamRouteImport } from './routes/api/files.$id.stream'
@@ -68,10 +70,20 @@ const ApiLockRoute = ApiLockRouteImport.update({
   path: '/api/lock',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiFoldersRoute = ApiFoldersRouteImport.update({
+  id: '/api/folders',
+  path: '/api/folders',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiFilesRoute = ApiFilesRouteImport.update({
   id: '/api/files',
   path: '/api/files',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ApiFoldersIdRoute = ApiFoldersIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiFoldersRoute,
 } as any)
 const ApiFilesIdRoute = ApiFilesIdRouteImport.update({
   id: '/$id',
@@ -94,6 +106,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/unlock': typeof UnlockRoute
   '/api/files': typeof ApiFilesRouteWithChildren
+  '/api/folders': typeof ApiFoldersRouteWithChildren
   '/api/lock': typeof ApiLockRoute
   '/api/status': typeof ApiStatusRoute
   '/api/unlock': typeof ApiUnlockRoute
@@ -101,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/api/upload-finalize': typeof ApiUploadFinalizeRoute
   '/api/whoami': typeof ApiWhoamiRoute
   '/api/files/$id': typeof ApiFilesIdRouteWithChildren
+  '/api/folders/$id': typeof ApiFoldersIdRoute
   '/api/files/$id/stream': typeof ApiFilesIdStreamRoute
   '/api/files/$id/thumb': typeof ApiFilesIdThumbRoute
 }
@@ -109,6 +123,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/unlock': typeof UnlockRoute
   '/api/files': typeof ApiFilesRouteWithChildren
+  '/api/folders': typeof ApiFoldersRouteWithChildren
   '/api/lock': typeof ApiLockRoute
   '/api/status': typeof ApiStatusRoute
   '/api/unlock': typeof ApiUnlockRoute
@@ -116,6 +131,7 @@ export interface FileRoutesByTo {
   '/api/upload-finalize': typeof ApiUploadFinalizeRoute
   '/api/whoami': typeof ApiWhoamiRoute
   '/api/files/$id': typeof ApiFilesIdRouteWithChildren
+  '/api/folders/$id': typeof ApiFoldersIdRoute
   '/api/files/$id/stream': typeof ApiFilesIdStreamRoute
   '/api/files/$id/thumb': typeof ApiFilesIdThumbRoute
 }
@@ -125,6 +141,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/unlock': typeof UnlockRoute
   '/api/files': typeof ApiFilesRouteWithChildren
+  '/api/folders': typeof ApiFoldersRouteWithChildren
   '/api/lock': typeof ApiLockRoute
   '/api/status': typeof ApiStatusRoute
   '/api/unlock': typeof ApiUnlockRoute
@@ -132,6 +149,7 @@ export interface FileRoutesById {
   '/api/upload-finalize': typeof ApiUploadFinalizeRoute
   '/api/whoami': typeof ApiWhoamiRoute
   '/api/files/$id': typeof ApiFilesIdRouteWithChildren
+  '/api/folders/$id': typeof ApiFoldersIdRoute
   '/api/files/$id/stream': typeof ApiFilesIdStreamRoute
   '/api/files/$id/thumb': typeof ApiFilesIdThumbRoute
 }
@@ -142,6 +160,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/unlock'
     | '/api/files'
+    | '/api/folders'
     | '/api/lock'
     | '/api/status'
     | '/api/unlock'
@@ -149,6 +168,7 @@ export interface FileRouteTypes {
     | '/api/upload-finalize'
     | '/api/whoami'
     | '/api/files/$id'
+    | '/api/folders/$id'
     | '/api/files/$id/stream'
     | '/api/files/$id/thumb'
   fileRoutesByTo: FileRoutesByTo
@@ -157,6 +177,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/unlock'
     | '/api/files'
+    | '/api/folders'
     | '/api/lock'
     | '/api/status'
     | '/api/unlock'
@@ -164,6 +185,7 @@ export interface FileRouteTypes {
     | '/api/upload-finalize'
     | '/api/whoami'
     | '/api/files/$id'
+    | '/api/folders/$id'
     | '/api/files/$id/stream'
     | '/api/files/$id/thumb'
   id:
@@ -172,6 +194,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/unlock'
     | '/api/files'
+    | '/api/folders'
     | '/api/lock'
     | '/api/status'
     | '/api/unlock'
@@ -179,6 +202,7 @@ export interface FileRouteTypes {
     | '/api/upload-finalize'
     | '/api/whoami'
     | '/api/files/$id'
+    | '/api/folders/$id'
     | '/api/files/$id/stream'
     | '/api/files/$id/thumb'
   fileRoutesById: FileRoutesById
@@ -188,6 +212,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   UnlockRoute: typeof UnlockRoute
   ApiFilesRoute: typeof ApiFilesRouteWithChildren
+  ApiFoldersRoute: typeof ApiFoldersRouteWithChildren
   ApiLockRoute: typeof ApiLockRoute
   ApiStatusRoute: typeof ApiStatusRoute
   ApiUnlockRoute: typeof ApiUnlockRoute
@@ -261,12 +286,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiLockRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/folders': {
+      id: '/api/folders'
+      path: '/api/folders'
+      fullPath: '/api/folders'
+      preLoaderRoute: typeof ApiFoldersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/files': {
       id: '/api/files'
       path: '/api/files'
       fullPath: '/api/files'
       preLoaderRoute: typeof ApiFilesRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/api/folders/$id': {
+      id: '/api/folders/$id'
+      path: '/$id'
+      fullPath: '/api/folders/$id'
+      preLoaderRoute: typeof ApiFoldersIdRouteImport
+      parentRoute: typeof ApiFoldersRoute
     }
     '/api/files/$id': {
       id: '/api/files/$id'
@@ -318,11 +357,24 @@ const ApiFilesRouteWithChildren = ApiFilesRoute._addFileChildren(
   ApiFilesRouteChildren,
 )
 
+interface ApiFoldersRouteChildren {
+  ApiFoldersIdRoute: typeof ApiFoldersIdRoute
+}
+
+const ApiFoldersRouteChildren: ApiFoldersRouteChildren = {
+  ApiFoldersIdRoute: ApiFoldersIdRoute,
+}
+
+const ApiFoldersRouteWithChildren = ApiFoldersRoute._addFileChildren(
+  ApiFoldersRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SettingsRoute: SettingsRoute,
   UnlockRoute: UnlockRoute,
   ApiFilesRoute: ApiFilesRouteWithChildren,
+  ApiFoldersRoute: ApiFoldersRouteWithChildren,
   ApiLockRoute: ApiLockRoute,
   ApiStatusRoute: ApiStatusRoute,
   ApiUnlockRoute: ApiUnlockRoute,
@@ -333,3 +385,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

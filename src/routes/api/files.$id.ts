@@ -16,10 +16,11 @@ export const Route = createFileRoute("/api/files/$id")({
       },
       PATCH: async ({ params, request }) => {
         requireUnlocked();
-        const body = (await request.json()) as { filename?: string; tags?: string[] };
-        const patch: { filename?: string; tags?: string[] } = {};
+        const body = (await request.json()) as { filename?: string; tags?: string[]; folder_id?: string | null };
+        const patch: { filename?: string; tags?: string[]; folder_id?: string | null } = {};
         if (typeof body.filename === "string" && body.filename.trim()) patch.filename = body.filename.trim().slice(0, 255);
         if (Array.isArray(body.tags)) patch.tags = body.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 32);
+        if ("folder_id" in body) patch.folder_id = body.folder_id ?? null;
         const file = await updateFile(params.id, patch);
         return Response.json({ file });
       },

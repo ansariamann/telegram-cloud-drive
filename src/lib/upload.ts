@@ -12,6 +12,7 @@ export type UploadProgress = {
 export async function uploadFile(
   file: File,
   onProgress: (p: UploadProgress) => void,
+  folderId?: string | null,
   signal?: AbortSignal,
 ): Promise<{ id: string; filename: string }> {
   const totalParts = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
@@ -48,6 +49,7 @@ export async function uploadFile(
       size: file.size,
       parts: parts.map(({ index, file_id, message_id, size }) => ({ index, file_id, message_id, size })),
       thumb_file_id: firstThumb,
+      folder_id: folderId ?? null,
     }),
   });
   if (!fin.ok) throw new Error(`Finalize failed: ${fin.status}`);

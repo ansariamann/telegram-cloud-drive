@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, Download, Pencil, Trash2, Loader2, Check } from "lucide-react";
+import { X, Download, Pencil, Trash2, Loader2, Check, FolderInput } from "lucide-react";
 import { formatBytes, formatDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { FolderPicker } from "@/components/folder-picker";
 import { toast } from "sonner";
 
 type FileDetail = {
@@ -13,15 +14,19 @@ type FileDetail = {
   size_bytes: number;
   kind: string;
   tags: string[];
+  folder_id: string | null;
   parts: Array<{ index: number; size: number; message_id: number }>;
   created_at: string;
   updated_at: string;
 };
 
+type FolderBreadcrumb = { id: string; name: string };
+
 export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () => void }) {
   const qc = useQueryClient();
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState("");
+  const [moveOpen, setMoveOpen] = useState(false);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -38,6 +43,18 @@ export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () =
       if (!res.ok) throw new Error("Not found");
       return (await res.json()) as { file: FileDetail; token: string };
     },
+  });
+
+  // Fetch folder breadcrumbs if file is in a folder
+  const folderQuery = useQuery({
+    queryKey: ["folder-breadcrumbs", data?.file?.folder_id],
+    queryFn: async () => {
+      if (!data?.file?.folder_id) return null;
+      const res = await fetch(`/api/folders/${data.file.folder_id}`);
+      if (!res.ok) return null;
+      return (await res.json()) as { folder: FolderBreadcrumb; breadcrumbs: FolderBreadcrumb[] };
+    },
+    enabled: !!data?.file?.folder_id,
   });
 
   const rename = useMutation({
@@ -58,6 +75,24 @@ export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () =
     onError: () => toast.error("Rename failed"),
   });
 
+  const moveMutation = useMutation({
+    mutationFn: async (folderId: string | null) => {
+      const res = await fetch(`/api/files/${fileId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ folder_id: folderId }),
+      });
+      if (!res.ok) throw new Error("Move failed");
+    },
+    onSuccess: () => {
+      toast.success("File moved");
+      qc.invalidateQueries({ queryKey: ["file", fileId] });
+      qc.invalidateQueries({ queryKey: ["files"] });
+      qc.invalidateQueries({ queryKey: ["folder-breadcrumbs"] });
+    },
+    onError: () => toast.error("Move failed"),
+  });
+
   const del = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/files/${fileId}`, { method: "DELETE" });
@@ -70,6 +105,8 @@ export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () =
     },
     onError: () => toast.error("Delete failed"),
   });
+
+  const folderPath = folderQuery.data?.breadcrumbs?.map((b) => b.name).join(" / ") ?? "Root";
 
   return (
     <div className="fixed inset-0 z-50 flex items-stretch bg-background/90 backdrop-blur">
@@ -135,6 +172,19 @@ export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () =
                 <Row label="MIME" value={data.file.mime} mono />
                 <Row label="Added" value={new Date(data.file.created_at).toLocaleString()} />
                 <Row label="Parts" value={String(data.file.parts.length)} />
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Location</dt>
+                  <dd className="text-right break-all flex items-center gap-1">
+                    <span>{folderPath}</span>
+                    <button
+                      onClick={() => setMoveOpen(true)}
+                      className="text-muted-foreground hover:text-primary p-0.5"
+                      aria-label="Move to folder"
+                    >
+                      <FolderInput className="h-3.5 w-3.5" />
+                    </button>
+                  </dd>
+                </div>
               </dl>
 
               <div className="mt-6 flex flex-col gap-2">
@@ -145,6 +195,14 @@ export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () =
                   <Download className="h-4 w-4 mr-1.5" />
                   Download
                 </a>
+                <Button
+                  variant="outline"
+                  onClick={() => setMoveOpen(true)}
+                  className="w-full"
+                >
+                  <FolderInput className="h-4 w-4 mr-1.5" />
+                  Move to Folder
+                </Button>
                 <Button
                   variant="destructive"
                   onClick={() => {
@@ -160,6 +218,13 @@ export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () =
           )}
         </aside>
       </div>
+
+      <FolderPicker
+        open={moveOpen}
+        onOpenChange={setMoveOpen}
+        currentFolderId={data?.file?.folder_id ?? null}
+        onSelect={(folderId) => moveMutation.mutate(folderId)}
+      />
     </div>
   );
 }
