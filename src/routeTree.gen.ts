@@ -10,11 +10,40 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiWhoamiRouteImport } from './routes/api/whoami'
+import { Route as ApiUploadFinalizeRouteImport } from './routes/api/upload-finalize'
+import { Route as ApiUploadChunkRouteImport } from './routes/api/upload-chunk'
+import { Route as ApiUnlockRouteImport } from './routes/api/unlock'
 import { Route as ApiStatusRouteImport } from './routes/api/status'
+import { Route as ApiLockRouteImport } from './routes/api/lock'
+import { Route as ApiFilesRouteImport } from './routes/api/files'
+import { Route as ApiFilesIdRouteImport } from './routes/api/files.$id'
+import { Route as ApiFilesIdThumbRouteImport } from './routes/api/files.$id.thumb'
+import { Route as ApiFilesIdStreamRouteImport } from './routes/api/files.$id.stream'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiWhoamiRoute = ApiWhoamiRouteImport.update({
+  id: '/api/whoami',
+  path: '/api/whoami',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiUploadFinalizeRoute = ApiUploadFinalizeRouteImport.update({
+  id: '/api/upload-finalize',
+  path: '/api/upload-finalize',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiUploadChunkRoute = ApiUploadChunkRouteImport.update({
+  id: '/api/upload-chunk',
+  path: '/api/upload-chunk',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiUnlockRoute = ApiUnlockRouteImport.update({
+  id: '/api/unlock',
+  path: '/api/unlock',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiStatusRoute = ApiStatusRouteImport.update({
@@ -22,31 +51,123 @@ const ApiStatusRoute = ApiStatusRouteImport.update({
   path: '/api/status',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiLockRoute = ApiLockRouteImport.update({
+  id: '/api/lock',
+  path: '/api/lock',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiFilesRoute = ApiFilesRouteImport.update({
+  id: '/api/files',
+  path: '/api/files',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiFilesIdRoute = ApiFilesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiFilesRoute,
+} as any)
+const ApiFilesIdThumbRoute = ApiFilesIdThumbRouteImport.update({
+  id: '/thumb',
+  path: '/thumb',
+  getParentRoute: () => ApiFilesIdRoute,
+} as any)
+const ApiFilesIdStreamRoute = ApiFilesIdStreamRouteImport.update({
+  id: '/stream',
+  path: '/stream',
+  getParentRoute: () => ApiFilesIdRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/files': typeof ApiFilesRouteWithChildren
+  '/api/lock': typeof ApiLockRoute
   '/api/status': typeof ApiStatusRoute
+  '/api/unlock': typeof ApiUnlockRoute
+  '/api/upload-chunk': typeof ApiUploadChunkRoute
+  '/api/upload-finalize': typeof ApiUploadFinalizeRoute
+  '/api/whoami': typeof ApiWhoamiRoute
+  '/api/files/$id': typeof ApiFilesIdRouteWithChildren
+  '/api/files/$id/stream': typeof ApiFilesIdStreamRoute
+  '/api/files/$id/thumb': typeof ApiFilesIdThumbRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/files': typeof ApiFilesRouteWithChildren
+  '/api/lock': typeof ApiLockRoute
   '/api/status': typeof ApiStatusRoute
+  '/api/unlock': typeof ApiUnlockRoute
+  '/api/upload-chunk': typeof ApiUploadChunkRoute
+  '/api/upload-finalize': typeof ApiUploadFinalizeRoute
+  '/api/whoami': typeof ApiWhoamiRoute
+  '/api/files/$id': typeof ApiFilesIdRouteWithChildren
+  '/api/files/$id/stream': typeof ApiFilesIdStreamRoute
+  '/api/files/$id/thumb': typeof ApiFilesIdThumbRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/files': typeof ApiFilesRouteWithChildren
+  '/api/lock': typeof ApiLockRoute
   '/api/status': typeof ApiStatusRoute
+  '/api/unlock': typeof ApiUnlockRoute
+  '/api/upload-chunk': typeof ApiUploadChunkRoute
+  '/api/upload-finalize': typeof ApiUploadFinalizeRoute
+  '/api/whoami': typeof ApiWhoamiRoute
+  '/api/files/$id': typeof ApiFilesIdRouteWithChildren
+  '/api/files/$id/stream': typeof ApiFilesIdStreamRoute
+  '/api/files/$id/thumb': typeof ApiFilesIdThumbRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/status'
+  fullPaths:
+    | '/'
+    | '/api/files'
+    | '/api/lock'
+    | '/api/status'
+    | '/api/unlock'
+    | '/api/upload-chunk'
+    | '/api/upload-finalize'
+    | '/api/whoami'
+    | '/api/files/$id'
+    | '/api/files/$id/stream'
+    | '/api/files/$id/thumb'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/status'
-  id: '__root__' | '/' | '/api/status'
+  to:
+    | '/'
+    | '/api/files'
+    | '/api/lock'
+    | '/api/status'
+    | '/api/unlock'
+    | '/api/upload-chunk'
+    | '/api/upload-finalize'
+    | '/api/whoami'
+    | '/api/files/$id'
+    | '/api/files/$id/stream'
+    | '/api/files/$id/thumb'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/files'
+    | '/api/lock'
+    | '/api/status'
+    | '/api/unlock'
+    | '/api/upload-chunk'
+    | '/api/upload-finalize'
+    | '/api/whoami'
+    | '/api/files/$id'
+    | '/api/files/$id/stream'
+    | '/api/files/$id/thumb'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiFilesRoute: typeof ApiFilesRouteWithChildren
+  ApiLockRoute: typeof ApiLockRoute
   ApiStatusRoute: typeof ApiStatusRoute
+  ApiUnlockRoute: typeof ApiUnlockRoute
+  ApiUploadChunkRoute: typeof ApiUploadChunkRoute
+  ApiUploadFinalizeRoute: typeof ApiUploadFinalizeRoute
+  ApiWhoamiRoute: typeof ApiWhoamiRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -58,6 +179,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/whoami': {
+      id: '/api/whoami'
+      path: '/api/whoami'
+      fullPath: '/api/whoami'
+      preLoaderRoute: typeof ApiWhoamiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/upload-finalize': {
+      id: '/api/upload-finalize'
+      path: '/api/upload-finalize'
+      fullPath: '/api/upload-finalize'
+      preLoaderRoute: typeof ApiUploadFinalizeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/upload-chunk': {
+      id: '/api/upload-chunk'
+      path: '/api/upload-chunk'
+      fullPath: '/api/upload-chunk'
+      preLoaderRoute: typeof ApiUploadChunkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/unlock': {
+      id: '/api/unlock'
+      path: '/api/unlock'
+      fullPath: '/api/unlock'
+      preLoaderRoute: typeof ApiUnlockRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/status': {
       id: '/api/status'
       path: '/api/status'
@@ -65,12 +214,79 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiStatusRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/lock': {
+      id: '/api/lock'
+      path: '/api/lock'
+      fullPath: '/api/lock'
+      preLoaderRoute: typeof ApiLockRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/files': {
+      id: '/api/files'
+      path: '/api/files'
+      fullPath: '/api/files'
+      preLoaderRoute: typeof ApiFilesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/files/$id': {
+      id: '/api/files/$id'
+      path: '/$id'
+      fullPath: '/api/files/$id'
+      preLoaderRoute: typeof ApiFilesIdRouteImport
+      parentRoute: typeof ApiFilesRoute
+    }
+    '/api/files/$id/thumb': {
+      id: '/api/files/$id/thumb'
+      path: '/thumb'
+      fullPath: '/api/files/$id/thumb'
+      preLoaderRoute: typeof ApiFilesIdThumbRouteImport
+      parentRoute: typeof ApiFilesIdRoute
+    }
+    '/api/files/$id/stream': {
+      id: '/api/files/$id/stream'
+      path: '/stream'
+      fullPath: '/api/files/$id/stream'
+      preLoaderRoute: typeof ApiFilesIdStreamRouteImport
+      parentRoute: typeof ApiFilesIdRoute
+    }
   }
 }
 
+interface ApiFilesIdRouteChildren {
+  ApiFilesIdStreamRoute: typeof ApiFilesIdStreamRoute
+  ApiFilesIdThumbRoute: typeof ApiFilesIdThumbRoute
+}
+
+const ApiFilesIdRouteChildren: ApiFilesIdRouteChildren = {
+  ApiFilesIdStreamRoute: ApiFilesIdStreamRoute,
+  ApiFilesIdThumbRoute: ApiFilesIdThumbRoute,
+}
+
+const ApiFilesIdRouteWithChildren = ApiFilesIdRoute._addFileChildren(
+  ApiFilesIdRouteChildren,
+)
+
+interface ApiFilesRouteChildren {
+  ApiFilesIdRoute: typeof ApiFilesIdRouteWithChildren
+}
+
+const ApiFilesRouteChildren: ApiFilesRouteChildren = {
+  ApiFilesIdRoute: ApiFilesIdRouteWithChildren,
+}
+
+const ApiFilesRouteWithChildren = ApiFilesRoute._addFileChildren(
+  ApiFilesRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiFilesRoute: ApiFilesRouteWithChildren,
+  ApiLockRoute: ApiLockRoute,
   ApiStatusRoute: ApiStatusRoute,
+  ApiUnlockRoute: ApiUnlockRoute,
+  ApiUploadChunkRoute: ApiUploadChunkRoute,
+  ApiUploadFinalizeRoute: ApiUploadFinalizeRoute,
+  ApiWhoamiRoute: ApiWhoamiRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
