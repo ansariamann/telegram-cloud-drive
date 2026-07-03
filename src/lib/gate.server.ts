@@ -59,7 +59,9 @@ function isValidSession(raw: string): boolean {
   const a = Buffer.from(sig);
   const b = Buffer.from(expected);
   if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b) && payload.startsWith("unlocked.");
+  const issuedAt = Number(payload.slice("unlocked.".length));
+  const fresh = Number.isFinite(issuedAt) && Date.now() - issuedAt <= MAX_AGE * 1000;
+  return timingSafeEqual(a, b) && payload.startsWith("unlocked.") && fresh;
 }
 
 export function requireUnlocked() {

@@ -1,6 +1,6 @@
-const CHUNK_SIZE = 45 * 1024 * 1024; // 45 MB (Telegram Bot API limit is 50 MB)
-
 import { vaultFetch } from "@/lib/vault-client";
+
+const CHUNK_SIZE = 45 * 1024 * 1024; // 45 MB (Telegram Bot API limit is 50 MB)
 
 export type UploadPart = { index: number; file_id: string; message_id: number; size: number; thumb_file_id?: string | null };
 
