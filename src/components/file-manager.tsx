@@ -202,7 +202,7 @@ export function FileManager() {
       const j = (await res.json()) as { folders: FolderRow[] };
       return j.folders;
     },
-    enabled: !q, // Don't fetch folders when searching
+    enabled: !q && kind === "all", // Don't fetch folders when searching or filtering
   });
 
   // Fetch files
@@ -494,7 +494,7 @@ export function FileManager() {
   }, [startUpload]);
 
   const files = filesQuery.data ?? [];
-  const folders = (!q ? foldersQuery.data : null) ?? [];
+  const folders = (!q && kind === "all" ? foldersQuery.data : null) ?? [];
   const totalSize = useMemo(() => files.reduce((n, f) => n + Number(f.size_bytes), 0), [files]);
   const isSearching = !!q;
   const allFileIds = files.map((f) => f.id);
@@ -606,9 +606,6 @@ export function FileManager() {
                 {label}
               </button>
             ))}
-            <div className="ml-auto text-[11px] tabular-nums text-muted-foreground shrink-0">
-              {files.length} files · {formatBytes(totalSize)}
-            </div>
           </div>
         </div>
 
