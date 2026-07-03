@@ -15,7 +15,7 @@ export function issueSession() {
   setCookie(COOKIE_NAME, `${payload}.${sig}`, {
     httpOnly: true,
     secure: true,
-    sameSite: "lax",
+    sameSite: "none",
     path: "/",
     maxAge: MAX_AGE,
   });
@@ -25,7 +25,7 @@ export function clearSession() {
   setCookie(COOKIE_NAME, "", {
     httpOnly: true,
     secure: true,
-    sameSite: "lax",
+    sameSite: "none",
     path: "/",
     maxAge: 0,
   });
