@@ -21,6 +21,7 @@ import { Route as ApiLockRouteImport } from './routes/api/lock'
 import { Route as ApiFoldersRouteImport } from './routes/api/folders'
 import { Route as ApiFilesRouteImport } from './routes/api/files'
 import { Route as ApiFoldersIdRouteImport } from './routes/api/folders.$id'
+import { Route as ApiFilesDownloadZipRouteImport } from './routes/api/files.download-zip'
 import { Route as ApiFilesIdRouteImport } from './routes/api/files.$id'
 import { Route as ApiFilesIdThumbRouteImport } from './routes/api/files.$id.thumb'
 import { Route as ApiFilesIdStreamRouteImport } from './routes/api/files.$id.stream'
@@ -85,6 +86,11 @@ const ApiFoldersIdRoute = ApiFoldersIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ApiFoldersRoute,
 } as any)
+const ApiFilesDownloadZipRoute = ApiFilesDownloadZipRouteImport.update({
+  id: '/download-zip',
+  path: '/download-zip',
+  getParentRoute: () => ApiFilesRoute,
+} as any)
 const ApiFilesIdRoute = ApiFilesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -114,6 +120,7 @@ export interface FileRoutesByFullPath {
   '/api/upload-finalize': typeof ApiUploadFinalizeRoute
   '/api/whoami': typeof ApiWhoamiRoute
   '/api/files/$id': typeof ApiFilesIdRouteWithChildren
+  '/api/files/download-zip': typeof ApiFilesDownloadZipRoute
   '/api/folders/$id': typeof ApiFoldersIdRoute
   '/api/files/$id/stream': typeof ApiFilesIdStreamRoute
   '/api/files/$id/thumb': typeof ApiFilesIdThumbRoute
@@ -131,6 +138,7 @@ export interface FileRoutesByTo {
   '/api/upload-finalize': typeof ApiUploadFinalizeRoute
   '/api/whoami': typeof ApiWhoamiRoute
   '/api/files/$id': typeof ApiFilesIdRouteWithChildren
+  '/api/files/download-zip': typeof ApiFilesDownloadZipRoute
   '/api/folders/$id': typeof ApiFoldersIdRoute
   '/api/files/$id/stream': typeof ApiFilesIdStreamRoute
   '/api/files/$id/thumb': typeof ApiFilesIdThumbRoute
@@ -149,6 +157,7 @@ export interface FileRoutesById {
   '/api/upload-finalize': typeof ApiUploadFinalizeRoute
   '/api/whoami': typeof ApiWhoamiRoute
   '/api/files/$id': typeof ApiFilesIdRouteWithChildren
+  '/api/files/download-zip': typeof ApiFilesDownloadZipRoute
   '/api/folders/$id': typeof ApiFoldersIdRoute
   '/api/files/$id/stream': typeof ApiFilesIdStreamRoute
   '/api/files/$id/thumb': typeof ApiFilesIdThumbRoute
@@ -168,6 +177,7 @@ export interface FileRouteTypes {
     | '/api/upload-finalize'
     | '/api/whoami'
     | '/api/files/$id'
+    | '/api/files/download-zip'
     | '/api/folders/$id'
     | '/api/files/$id/stream'
     | '/api/files/$id/thumb'
@@ -185,6 +195,7 @@ export interface FileRouteTypes {
     | '/api/upload-finalize'
     | '/api/whoami'
     | '/api/files/$id'
+    | '/api/files/download-zip'
     | '/api/folders/$id'
     | '/api/files/$id/stream'
     | '/api/files/$id/thumb'
@@ -202,6 +213,7 @@ export interface FileRouteTypes {
     | '/api/upload-finalize'
     | '/api/whoami'
     | '/api/files/$id'
+    | '/api/files/download-zip'
     | '/api/folders/$id'
     | '/api/files/$id/stream'
     | '/api/files/$id/thumb'
@@ -307,6 +319,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiFoldersIdRouteImport
       parentRoute: typeof ApiFoldersRoute
     }
+    '/api/files/download-zip': {
+      id: '/api/files/download-zip'
+      path: '/download-zip'
+      fullPath: '/api/files/download-zip'
+      preLoaderRoute: typeof ApiFilesDownloadZipRouteImport
+      parentRoute: typeof ApiFilesRoute
+    }
     '/api/files/$id': {
       id: '/api/files/$id'
       path: '/$id'
@@ -347,10 +366,12 @@ const ApiFilesIdRouteWithChildren = ApiFilesIdRoute._addFileChildren(
 
 interface ApiFilesRouteChildren {
   ApiFilesIdRoute: typeof ApiFilesIdRouteWithChildren
+  ApiFilesDownloadZipRoute: typeof ApiFilesDownloadZipRoute
 }
 
 const ApiFilesRouteChildren: ApiFilesRouteChildren = {
   ApiFilesIdRoute: ApiFilesIdRouteWithChildren,
+  ApiFilesDownloadZipRoute: ApiFilesDownloadZipRoute,
 }
 
 const ApiFilesRouteWithChildren = ApiFilesRoute._addFileChildren(

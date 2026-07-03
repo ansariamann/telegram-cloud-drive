@@ -25,15 +25,20 @@ import {
   MoreHorizontal,
   Pencil,
   FolderInput,
+  RotateCcw,
+  CheckSquare,
+  PackageOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
 import { formatBytes, formatDate } from "@/lib/format";
 import { uploadFile, type UploadProgress } from "@/lib/upload";
 import { FilePreview } from "@/components/file-preview";
 import { NewFolderDialog } from "@/components/new-folder-dialog";
 import { FolderPicker } from "@/components/folder-picker";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { vaultFetch, vaultUrl } from "@/lib/vault-client";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
@@ -103,7 +108,39 @@ type Uploading = {
   progress: UploadProgress | null;
   error?: string;
   done?: boolean;
+  controller: AbortController;
 };
+
+// ---------- pending delete state ----------
+type PendingDelete =
+  | { type: "file"; id: string; name: string }
+  | { type: "folder"; id: string; name: string }
+  | { type: "bulk"; ids: string[]; count: number };
+
+// ---------- concurrent upload pool ----------
+const UPLOAD_CONCURRENCY = 3;
+
+async function runPool<T>(
+  tasks: Array<() => Promise<T>>,
+  concurrency: number,
+): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = new Array(tasks.length);
+  let nextIdx = 0;
+
+  async function worker() {
+    while (nextIdx < tasks.length) {
+      const idx = nextIdx++;
+      try {
+        results[idx] = { status: "fulfilled", value: await tasks[idx]() };
+      } catch (e) {
+        results[idx] = { status: "rejected", reason: e };
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, worker));
+  return results;
+}
 
 export function FileManager() {
   const qc = useQueryClient();
@@ -123,6 +160,35 @@ export function FileManager() {
   const [moveFileId, setMoveFileId] = useState<string | null>(null);
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   const [folderNewName, setFolderNewName] = useState("");
+
+  // Confirm dialog state
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+
+  // Bulk selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
+  const [bulkDownloading, setBulkDownloading] = useState(false);
+
+  // Clear selection when navigating folders or searching
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [currentFolderId, q]);
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const selectAll = useCallback((fileIds: string[]) => {
+    setSelectedIds((prev) => {
+      if (fileIds.every((id) => prev.has(id))) return new Set(); // deselect all
+      return new Set(fileIds);
+    });
+  }, []);
 
   // Fetch folders for current level
   const foldersQuery = useQuery({
@@ -212,6 +278,75 @@ export function FileManager() {
     onError: () => toast.error("Failed to move file"),
   });
 
+  // Bulk delete handler
+  const handleBulkDelete = useCallback(async () => {
+    const ids = [...selectedIds];
+    let succeeded = 0;
+    for (const id of ids) {
+      try {
+        const res = await vaultFetch(`/api/files/${id}`, { method: "DELETE" });
+        if (res.ok) succeeded++;
+      } catch {
+        // continue
+      }
+    }
+    toast.success(`Deleted ${succeeded} file${succeeded !== 1 ? "s" : ""}`);
+    setSelectedIds(new Set());
+    qc.invalidateQueries({ queryKey: ["files"] });
+  }, [selectedIds, qc]);
+
+  // Bulk move handler
+  const handleBulkMove = useCallback(
+    async (folderId: string | null) => {
+      const ids = [...selectedIds];
+      let succeeded = 0;
+      for (const id of ids) {
+        try {
+          const res = await vaultFetch(`/api/files/${id}`, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ folder_id: folderId }),
+          });
+          if (res.ok) succeeded++;
+        } catch {
+          // continue
+        }
+      }
+      toast.success(`Moved ${succeeded} file${succeeded !== 1 ? "s" : ""}`);
+      setSelectedIds(new Set());
+      qc.invalidateQueries({ queryKey: ["files"] });
+    },
+    [selectedIds, qc],
+  );
+
+  // Bulk download (ZIP)
+  const handleBulkDownload = useCallback(async () => {
+    const ids = [...selectedIds];
+    setBulkDownloading(true);
+    try {
+      const res = await vaultFetch("/api/files/download-zip", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) throw new Error(`ZIP failed: ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `vault-${ids.length}-files.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Downloaded ${ids.length} file${ids.length !== 1 ? "s" : ""} as ZIP`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "ZIP download failed");
+    } finally {
+      setBulkDownloading(false);
+    }
+  }, [selectedIds]);
+
   // Navigate into folder
   const navigateToFolder = useCallback(async (folderId: string | null) => {
     setCurrentFolderId(folderId);
@@ -219,7 +354,7 @@ export function FileManager() {
       setBreadcrumbs([]);
     } else {
       try {
-          const res = await vaultFetch(`/api/folders/${folderId}`);
+        const res = await vaultFetch(`/api/folders/${folderId}`);
         if (res.ok) {
           const data = (await res.json()) as { folder: FolderRow; breadcrumbs: FolderRow[] };
           setBreadcrumbs(data.breadcrumbs.map((b) => ({ id: b.id, name: b.name })));
@@ -230,27 +365,57 @@ export function FileManager() {
     }
   }, []);
 
+  // Concurrent upload pool
   const startUpload = useCallback(
     async (files: File[]) => {
-      for (const file of files) {
+      const tasks = files.map((file) => async () => {
+        const controller = new AbortController();
         const uploadId = crypto.randomUUID();
-        setUploads((u) => [...u, { id: uploadId, file, progress: null }]);
+        setUploads((u) => [...u, { id: uploadId, file, progress: null, controller }]);
         try {
-          await uploadFile(file, (p) => {
-            setUploads((u) => u.map((x) => (x.id === uploadId ? { ...x, progress: p } : x)));
-          }, currentFolderId);
+          await uploadFile(
+            file,
+            (p) => {
+              setUploads((u) => u.map((x) => (x.id === uploadId ? { ...x, progress: p } : x)));
+            },
+            currentFolderId,
+            controller.signal,
+          );
           setUploads((u) => u.map((x) => (x.id === uploadId ? { ...x, done: true } : x)));
           toast.success(`Uploaded ${file.name}`);
           qc.invalidateQueries({ queryKey: ["files"] });
           setTimeout(() => setUploads((u) => u.filter((x) => x.id !== uploadId)), 2500);
         } catch (err) {
           const message = err instanceof Error ? err.message : "Upload failed";
-          setUploads((u) => u.map((x) => (x.id === uploadId ? { ...x, error: message } : x)));
-          toast.error(`${file.name}: ${message}`);
+          if (message === "Upload cancelled") {
+            setUploads((u) => u.filter((x) => x.id !== uploadId));
+          } else {
+            setUploads((u) => u.map((x) => (x.id === uploadId ? { ...x, error: message } : x)));
+            toast.error(`${file.name}: ${message}`);
+          }
         }
-      }
+      });
+
+      // Run with concurrency limit
+      await runPool(tasks, UPLOAD_CONCURRENCY);
     },
     [qc, currentFolderId],
+  );
+
+  const cancelUpload = useCallback((uploadId: string) => {
+    setUploads((u) => {
+      const entry = u.find((x) => x.id === uploadId);
+      entry?.controller.abort();
+      return u.filter((x) => x.id !== uploadId);
+    });
+  }, []);
+
+  const retryUpload = useCallback(
+    (entry: Uploading) => {
+      setUploads((u) => u.filter((x) => x.id !== entry.id));
+      startUpload([entry.file]);
+    },
+    [startUpload],
   );
 
   // drag & drop overlay
@@ -292,6 +457,8 @@ export function FileManager() {
   const folders = (!q ? foldersQuery.data : null) ?? [];
   const totalSize = useMemo(() => files.reduce((n, f) => n + Number(f.size_bytes), 0), [files]);
   const isSearching = !!q;
+  const allFileIds = files.map((f) => f.id);
+  const allSelected = allFileIds.length > 0 && allFileIds.every((id) => selectedIds.has(id));
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -333,7 +500,9 @@ export function FileManager() {
               <button
                 onClick={() => setView("grid")}
                 className={`px-2.5 h-9 flex items-center ${
-                  view === "grid" ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"
+                  view === "grid"
+                    ? "bg-secondary text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
                 aria-label="Grid view"
               >
@@ -342,7 +511,9 @@ export function FileManager() {
               <button
                 onClick={() => setView("list")}
                 className={`px-2.5 h-9 flex items-center border-l border-border ${
-                  view === "list" ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"
+                  view === "list"
+                    ? "bg-secondary text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
                 aria-label="List view"
               >
@@ -408,7 +579,9 @@ export function FileManager() {
               <button
                 onClick={() => navigateToFolder(null)}
                 className={`shrink-0 flex items-center gap-1 px-2 py-1 rounded-md transition-colors hover:bg-muted ${
-                  currentFolderId === null ? "text-foreground font-medium" : "text-muted-foreground hover:text-foreground"
+                  currentFolderId === null
+                    ? "text-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 <Home className="h-3.5 w-3.5" />
@@ -434,13 +607,20 @@ export function FileManager() {
         )}
       </header>
 
-      <main className="mx-auto max-w-[1600px] px-4 sm:px-6 py-6">
+      <main className="mx-auto max-w-[1600px] px-4 sm:px-6 py-6 pb-24">
         {filesQuery.isLoading ? (
           <div className="flex items-center justify-center py-24 text-muted-foreground text-sm">
             <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Loading…
           </div>
         ) : folders.length === 0 && files.length === 0 ? (
-          <EmptyState onPick={() => fileInputRef.current?.click()} onNewFolder={() => setNewFolderOpen(true)} isRoot={currentFolderId === null} />
+          <EmptyState
+            onPick={() => fileInputRef.current?.click()}
+            onNewFolder={() => setNewFolderOpen(true)}
+            isRoot={currentFolderId === null}
+            isSearching={isSearching}
+            searchQuery={q}
+            onClearSearch={() => setQ("")}
+          />
         ) : view === "grid" ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {/* Folders first */}
@@ -453,15 +633,13 @@ export function FileManager() {
                   setRenamingFolderId(f.id);
                   setFolderNewName(f.name);
                 }}
-                onDelete={() => {
-                  if (confirm(`Delete folder "${f.name}"? Sub-folders will also be deleted. Files inside will be moved to root.`))
-                    deleteFolderMutation.mutate(f.id);
-                }}
+                onDelete={() => setPendingDelete({ type: "folder", id: f.id, name: f.name })}
                 isRenaming={renamingFolderId === f.id}
                 renameName={folderNewName}
                 onRenameChange={setFolderNewName}
                 onRenameSubmit={() => {
-                  if (folderNewName.trim()) renameFolderMutation.mutate({ id: f.id, name: folderNewName.trim() });
+                  if (folderNewName.trim())
+                    renameFolderMutation.mutate({ id: f.id, name: folderNewName.trim() });
                 }}
                 onRenameCancel={() => setRenamingFolderId(null)}
               />
@@ -471,10 +649,11 @@ export function FileManager() {
               <GridCard
                 key={f.id}
                 file={f}
+                selected={selectedIds.has(f.id)}
+                anySelected={selectedIds.size > 0}
+                onSelect={() => toggleSelect(f.id)}
                 onOpen={() => setPreviewId(f.id)}
-                onDelete={() => {
-                  if (confirm(`Delete ${f.filename}?`)) deleteMutation.mutate(f.id);
-                }}
+                onDelete={() => setPendingDelete({ type: "file", id: f.id, name: f.filename })}
                 onMove={() => {
                   setMoveFileId(f.id);
                   setMovePickerOpen(true);
@@ -486,14 +665,14 @@ export function FileManager() {
           <ListView
             folders={folders}
             files={files}
+            selectedIds={selectedIds}
+            allSelected={allSelected}
+            onSelectAll={() => selectAll(allFileIds)}
+            onSelectFile={toggleSelect}
             onOpenFile={(id) => setPreviewId(id)}
             onOpenFolder={(id) => navigateToFolder(id)}
-            onDeleteFile={(id, name) => {
-              if (confirm(`Delete ${name}?`)) deleteMutation.mutate(id);
-            }}
-            onDeleteFolder={(id, name) => {
-              if (confirm(`Delete folder "${name}"?`)) deleteFolderMutation.mutate(id);
-            }}
+            onDeleteFile={(id, name) => setPendingDelete({ type: "file", id, name })}
+            onDeleteFolder={(id, name) => setPendingDelete({ type: "folder", id, name })}
             onMoveFile={(id) => {
               setMoveFileId(id);
               setMovePickerOpen(true);
@@ -506,22 +685,77 @@ export function FileManager() {
             folderNewName={folderNewName}
             onFolderNewNameChange={setFolderNewName}
             onFolderRenameSubmit={(id) => {
-              if (folderNewName.trim()) renameFolderMutation.mutate({ id, name: folderNewName.trim() });
+              if (folderNewName.trim())
+                renameFolderMutation.mutate({ id, name: folderNewName.trim() });
             }}
             onFolderRenameCancel={() => setRenamingFolderId(null)}
           />
         )}
       </main>
 
+      {/* Bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-card/95 backdrop-blur shadow-2xl">
+          <div className="mx-auto max-w-[1600px] px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+            <span className="text-sm font-medium text-foreground tabular-nums">
+              {selectedIds.size} file{selectedIds.size !== 1 ? "s" : ""} selected
+            </span>
+            <div className="flex gap-2 flex-wrap ml-auto">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleBulkDownload}
+                disabled={bulkDownloading}
+              >
+                {bulkDownloading ? (
+                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4 mr-1.5" />
+                )}
+                {bulkDownloading ? "Preparing ZIP…" : "Download as ZIP"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setBulkMoveOpen(true)}>
+                <FolderInput className="h-4 w-4 mr-1.5" />
+                Move to folder
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() =>
+                  setPendingDelete({ type: "bulk", ids: [...selectedIds], count: selectedIds.size })
+                }
+              >
+                <Trash2 className="h-4 w-4 mr-1.5" />
+                Delete {selectedIds.size}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSelectedIds(new Set())}
+                aria-label="Clear selection"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Upload tray */}
       {uploads.length > 0 && (
-        <div className="fixed bottom-4 right-4 z-40 w-80 rounded-lg border border-border bg-card shadow-2xl overflow-hidden">
+        <div
+          className={`fixed z-40 w-80 rounded-lg border border-border bg-card shadow-2xl overflow-hidden transition-all ${
+            selectedIds.size > 0 ? "bottom-20 right-4" : "bottom-4 right-4"
+          }`}
+        >
           <div className="px-3 py-2 border-b border-border flex items-center justify-between text-xs">
-            <span className="font-medium">Uploads</span>
+            <span className="font-medium">
+              Uploads ({uploads.filter((u) => !u.done && !u.error).length} active)
+            </span>
             <button
               onClick={() => setUploads((u) => u.filter((x) => !x.done && !x.error))}
               className="text-muted-foreground hover:text-foreground"
-              aria-label="Clear"
+              aria-label="Clear finished"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -533,7 +767,29 @@ export function FileManager() {
                 <li key={u.id} className="px-3 py-2 text-xs">
                   <div className="flex items-center gap-2">
                     <span className="truncate flex-1">{u.file.name}</span>
-                    <span className="tabular-nums text-muted-foreground">{formatBytes(u.file.size)}</span>
+                    <span className="tabular-nums text-muted-foreground shrink-0">
+                      {formatBytes(u.file.size)}
+                    </span>
+                    {/* Cancel / Retry buttons */}
+                    {u.error ? (
+                      <button
+                        onClick={() => retryUpload(u)}
+                        className="text-muted-foreground hover:text-primary"
+                        aria-label="Retry upload"
+                        title="Retry"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      </button>
+                    ) : !u.done ? (
+                      <button
+                        onClick={() => cancelUpload(u.id)}
+                        className="text-muted-foreground hover:text-destructive"
+                        aria-label="Cancel upload"
+                        title="Cancel"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
                   </div>
                   <div className="mt-1.5 flex items-center gap-2">
                     <Progress value={u.done ? 100 : pct} className="h-1 flex-1" />
@@ -576,6 +832,7 @@ export function FileManager() {
         onCreated={() => qc.invalidateQueries({ queryKey: ["folders"] })}
       />
 
+      {/* Single-file move picker */}
       <FolderPicker
         open={movePickerOpen}
         onOpenChange={setMovePickerOpen}
@@ -587,19 +844,97 @@ export function FileManager() {
           }
         }}
       />
+
+      {/* Bulk move picker */}
+      <FolderPicker
+        open={bulkMoveOpen}
+        onOpenChange={setBulkMoveOpen}
+        currentFolderId={currentFolderId}
+        onSelect={(folderId) => {
+          handleBulkMove(folderId);
+          setBulkMoveOpen(false);
+        }}
+      />
+
+      {/* Unified confirm dialog */}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+        title={
+          pendingDelete?.type === "bulk"
+            ? `Delete ${pendingDelete.count} file${pendingDelete.count !== 1 ? "s" : ""}?`
+            : pendingDelete?.type === "folder"
+              ? `Delete folder "${pendingDelete?.name}"?`
+              : `Delete "${pendingDelete?.name}"?`
+        }
+        description={
+          pendingDelete?.type === "bulk"
+            ? "All selected files will be permanently removed from Telegram. This cannot be undone."
+            : pendingDelete?.type === "folder"
+              ? "Sub-folders will also be deleted. Files inside will be moved to root. This cannot be undone."
+              : "This file will be permanently removed from Telegram. This cannot be undone."
+        }
+        confirmLabel={
+          pendingDelete?.type === "bulk" ? `Delete ${pendingDelete?.count} files` : "Delete"
+        }
+        destructive
+        onConfirm={() => {
+          if (!pendingDelete) return;
+          if (pendingDelete.type === "file") deleteMutation.mutate(pendingDelete.id);
+          else if (pendingDelete.type === "folder") deleteFolderMutation.mutate(pendingDelete.id);
+          else handleBulkDelete();
+          setPendingDelete(null);
+        }}
+      />
     </div>
   );
 }
 
-function EmptyState({ onPick, onNewFolder, isRoot }: { onPick: () => void; onNewFolder: () => void; isRoot: boolean }) {
+function EmptyState({
+  onPick,
+  onNewFolder,
+  isRoot,
+  isSearching,
+  searchQuery,
+  onClearSearch,
+}: {
+  onPick: () => void;
+  onNewFolder: () => void;
+  isRoot: boolean;
+  isSearching?: boolean;
+  searchQuery?: string;
+  onClearSearch?: () => void;
+}) {
+  if (isSearching) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center">
+        <div className="h-14 w-14 rounded-2xl bg-muted flex items-center justify-center mb-4">
+          <Search className="h-6 w-6 text-muted-foreground" />
+        </div>
+        <h2 className="text-lg font-semibold">No results for "{searchQuery}"</h2>
+        <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+          Try a different search term or clear the search to browse all files.
+        </p>
+        <Button variant="outline" className="mt-5" onClick={onClearSearch}>
+          <X className="h-4 w-4 mr-1.5" />
+          Clear search
+        </Button>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
       <div className="h-14 w-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-4">
-        <Upload className="h-6 w-6" />
+        {isRoot ? <PackageOpen className="h-6 w-6" /> : <Folder className="h-6 w-6" />}
       </div>
-      <h2 className="text-lg font-semibold">{isRoot ? "Vault is empty" : "This folder is empty"}</h2>
+      <h2 className="text-lg font-semibold">
+        {isRoot ? "Vault is empty" : "This folder is empty"}
+      </h2>
       <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-        Drop files anywhere on this page, or click Upload. Everything goes into your private Telegram group.
+        Drop files anywhere on this page, or click Upload. Everything goes into your private
+        Telegram group.
       </p>
       <div className="mt-5 flex gap-2">
         <Button variant="outline" onClick={onNewFolder}>
@@ -678,7 +1013,10 @@ function FolderGridCard({
               <Pencil className="h-3.5 w-3.5 mr-2" />
               Rename
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive">
+            <DropdownMenuItem
+              onClick={onDelete}
+              className="text-destructive focus:text-destructive"
+            >
               <Trash2 className="h-3.5 w-3.5 mr-2" />
               Delete
             </DropdownMenuItem>
@@ -691,11 +1029,17 @@ function FolderGridCard({
 
 function GridCard({
   file,
+  selected,
+  anySelected,
+  onSelect,
   onOpen,
   onDelete,
   onMove,
 }: {
   file: FileRow;
+  selected: boolean;
+  anySelected: boolean;
+  onSelect: () => void;
   onOpen: () => void;
   onDelete: () => void;
   onMove: () => void;
@@ -703,7 +1047,29 @@ function GridCard({
   const Icon = kindIcon(file.kind);
   const hasThumb = !!file.thumb_file_id || file.kind === "image";
   return (
-    <div className="group relative rounded-lg border border-border bg-card overflow-hidden hover:border-primary/40 transition-colors">
+    <div
+      className={`group relative rounded-lg border bg-card overflow-hidden transition-colors ${
+        selected ? "border-primary ring-1 ring-primary/30" : "border-border hover:border-primary/40"
+      }`}
+    >
+      {/* Checkbox overlay */}
+      <div
+        className={`absolute top-1.5 left-1.5 z-10 transition-opacity ${
+          selected || anySelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+        }`}
+      >
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect();
+          }}
+          className="h-6 w-6 flex items-center justify-center rounded bg-background/80 backdrop-blur border border-border"
+          aria-label="Select file"
+        >
+          <Checkbox checked={selected} onCheckedChange={onSelect} className="pointer-events-none" />
+        </button>
+      </div>
+
       <button onClick={onOpen} className="block w-full text-left">
         <div className="aspect-square bg-muted flex items-center justify-center relative overflow-hidden">
           {hasThumb ? (
@@ -742,14 +1108,20 @@ function GridCard({
           <Download className="h-3.5 w-3.5" />
         </a>
         <button
-          onClick={(e) => { e.stopPropagation(); onMove(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onMove();
+          }}
           className="h-7 w-7 flex items-center justify-center rounded-md bg-background/80 backdrop-blur border border-border text-muted-foreground hover:text-foreground"
           aria-label="Move"
         >
           <FolderInput className="h-3.5 w-3.5" />
         </button>
         <button
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
           className="h-7 w-7 flex items-center justify-center rounded-md bg-background/80 backdrop-blur border border-border text-muted-foreground hover:text-destructive"
           aria-label="Delete"
         >
@@ -763,6 +1135,10 @@ function GridCard({
 function ListView({
   folders,
   files,
+  selectedIds,
+  allSelected,
+  onSelectAll,
+  onSelectFile,
   onOpenFile,
   onOpenFolder,
   onDeleteFile,
@@ -777,6 +1153,10 @@ function ListView({
 }: {
   folders: FolderRow[];
   files: FileRow[];
+  selectedIds: Set<string>;
+  allSelected: boolean;
+  onSelectAll: () => void;
+  onSelectFile: (id: string) => void;
   onOpenFile: (id: string) => void;
   onOpenFolder: (id: string) => void;
   onDeleteFile: (id: string, name: string) => void;
@@ -794,6 +1174,17 @@ function ListView({
       <table className="w-full text-sm">
         <thead className="bg-muted/30 text-xs text-muted-foreground">
           <tr>
+            <th className="px-3 py-2 w-8">
+              <button
+                onClick={onSelectAll}
+                aria-label="Select all files"
+                title={allSelected ? "Deselect all" : "Select all"}
+              >
+                <CheckSquare
+                  className={`h-4 w-4 ${allSelected ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                />
+              </button>
+            </th>
             <th className="text-left px-3 py-2 font-medium">Name</th>
             <th className="text-left px-3 py-2 font-medium w-24">Kind</th>
             <th className="text-right px-3 py-2 font-medium w-24 tabular-nums">Size</th>
@@ -809,6 +1200,9 @@ function ListView({
               className="border-t border-border hover:bg-muted/20 cursor-pointer"
               onClick={() => onOpenFolder(f.id)}
             >
+              <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                {/* Folders are not selectable */}
+              </td>
               <td className="px-3 py-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <Folder className="h-4 w-4 shrink-0 text-primary/70" />
@@ -830,9 +1224,13 @@ function ListView({
                   )}
                 </div>
               </td>
-              <td className="px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">folder</td>
+              <td className="px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
+                folder
+              </td>
               <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">—</td>
-              <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{formatDate(f.created_at)}</td>
+              <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                {formatDate(f.created_at)}
+              </td>
               <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                 <div className="flex justify-end gap-1">
                   <button
@@ -856,23 +1254,35 @@ function ListView({
           {/* Then files */}
           {files.map((f) => {
             const Icon = kindIcon(f.kind);
+            const isSelected = selectedIds.has(f.id);
             return (
               <tr
                 key={f.id}
-                className="border-t border-border hover:bg-muted/20 cursor-pointer"
+                className={`border-t border-border hover:bg-muted/20 cursor-pointer transition-colors ${isSelected ? "bg-primary/5" : ""}`}
                 onClick={() => onOpenFile(f.id)}
               >
+                <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                  <Checkbox
+                    checked={isSelected}
+                    onCheckedChange={() => onSelectFile(f.id)}
+                    aria-label={`Select ${f.filename}`}
+                  />
+                </td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <span className="truncate">{f.filename}</span>
                   </div>
                 </td>
-                <td className="px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">{f.kind}</td>
+                <td className="px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
+                  {f.kind}
+                </td>
                 <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                   {formatBytes(Number(f.size_bytes))}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{formatDate(f.created_at)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                  {formatDate(f.created_at)}
+                </td>
                 <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                   <div className="flex justify-end gap-1">
                     <a

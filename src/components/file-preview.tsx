@@ -5,6 +5,7 @@ import { formatBytes, formatDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FolderPicker } from "@/components/folder-picker";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { toast } from "sonner";
 import { vaultFetch, vaultUrl } from "@/lib/vault-client";
 
@@ -28,6 +29,7 @@ export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () =
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState("");
   const [moveOpen, setMoveOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -152,7 +154,9 @@ export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () =
                   </div>
                 ) : (
                   <div className="flex items-start gap-1.5 group">
-                    <h2 className="text-base font-semibold break-all flex-1">{data.file.filename}</h2>
+                    <h2 className="text-base font-semibold break-all flex-1">
+                      {data.file.filename}
+                    </h2>
                     <button
                       onClick={() => {
                         setNewName(data.file.filename);
@@ -165,7 +169,9 @@ export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () =
                     </button>
                   </div>
                 )}
-                <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wider">{data.file.kind}</p>
+                <p className="text-xs text-muted-foreground mt-1 uppercase tracking-wider">
+                  {data.file.kind}
+                </p>
               </div>
 
               <dl className="space-y-3 text-xs">
@@ -196,19 +202,13 @@ export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () =
                   <Download className="h-4 w-4 mr-1.5" />
                   Download
                 </a>
-                <Button
-                  variant="outline"
-                  onClick={() => setMoveOpen(true)}
-                  className="w-full"
-                >
+                <Button variant="outline" onClick={() => setMoveOpen(true)} className="w-full">
                   <FolderInput className="h-4 w-4 mr-1.5" />
                   Move to Folder
                 </Button>
                 <Button
                   variant="destructive"
-                  onClick={() => {
-                    if (confirm(`Delete ${data.file.filename}?`)) del.mutate();
-                  }}
+                  onClick={() => setDeleteOpen(true)}
                   className="w-full"
                 >
                   <Trash2 className="h-4 w-4 mr-1.5" />
@@ -226,6 +226,16 @@ export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () =
         currentFolderId={data?.file?.folder_id ?? null}
         onSelect={(folderId) => moveMutation.mutate(folderId)}
       />
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title={`Delete "${data?.file?.filename ?? ""}"?`}
+        description="This will permanently remove the file from Telegram and cannot be undone."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => del.mutate()}
+      />
     </div>
   );
 }
@@ -242,7 +252,13 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
 function PreviewBody({ file }: { file: FileDetail }) {
   const src = vaultUrl(`/api/files/${file.id}/stream`);
   if (file.kind === "image") {
-    return <img src={src} alt={file.filename} className="max-h-full max-w-full object-contain rounded-md" />;
+    return (
+      <img
+        src={src}
+        alt={file.filename}
+        className="max-h-full max-w-full object-contain rounded-md"
+      />
+    );
   }
   if (file.kind === "video") {
     return <video src={src} controls className="max-h-full max-w-full rounded-md bg-black" />;
@@ -256,7 +272,13 @@ function PreviewBody({ file }: { file: FileDetail }) {
     );
   }
   if (file.kind === "pdf") {
-    return <iframe src={src} title={file.filename} className="w-full h-full min-h-[70vh] rounded-md bg-white" />;
+    return (
+      <iframe
+        src={src}
+        title={file.filename}
+        className="w-full h-full min-h-[70vh] rounded-md bg-white"
+      />
+    );
   }
   return (
     <div className="text-center">
