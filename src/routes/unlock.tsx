@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { setVaultSession } from "@/lib/vault-client";
 
 export const Route = createFileRoute("/unlock")({
   component: Unlock,
@@ -23,6 +24,7 @@ function Unlock() {
     try {
       const res = await fetch("/api/unlock", {
         method: "POST",
+        credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ passcode }),
       });
@@ -30,6 +32,8 @@ function Unlock() {
         setError("Incorrect passcode");
         return;
       }
+      const data = (await res.json()) as { ok: true; session?: string };
+      if (data.session) setVaultSession(data.session);
       await qc.invalidateQueries({ queryKey: ["unlock-status"] });
       await nav({ to: "/" });
     } finally {

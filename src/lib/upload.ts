@@ -1,5 +1,7 @@
 const CHUNK_SIZE = 45 * 1024 * 1024; // 45 MB (Telegram Bot API limit is 50 MB)
 
+import { vaultFetch } from "@/lib/vault-client";
+
 export type UploadPart = { index: number; file_id: string; message_id: number; size: number; thumb_file_id?: string | null };
 
 export type UploadProgress = {
@@ -31,7 +33,7 @@ export async function uploadFile(
     form.set("mime", file.type || "application/octet-stream");
     form.set("index", String(i));
     form.set("totalParts", String(totalParts));
-    const res = await fetch("/api/upload-chunk", { method: "POST", body: form, signal });
+    const res = await vaultFetch("/api/upload-chunk", { method: "POST", body: form, signal });
     if (!res.ok) throw new Error(`Part ${i + 1}/${totalParts} failed: ${res.status}`);
     const data = (await res.json()) as UploadPart;
     parts.push(data);
@@ -40,7 +42,7 @@ export async function uploadFile(
     onProgress({ loaded, total: file.size, partIndex: i + 1, totalParts });
   }
 
-  const fin = await fetch("/api/upload-finalize", {
+  const fin = await vaultFetch("/api/upload-finalize", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({

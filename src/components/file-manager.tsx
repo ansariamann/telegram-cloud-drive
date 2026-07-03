@@ -34,6 +34,7 @@ import { uploadFile, type UploadProgress } from "@/lib/upload";
 import { FilePreview } from "@/components/file-preview";
 import { NewFolderDialog } from "@/components/new-folder-dialog";
 import { FolderPicker } from "@/components/folder-picker";
+import { vaultFetch, vaultUrl } from "@/lib/vault-client";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import {
@@ -128,7 +129,7 @@ export function FileManager() {
     queryKey: ["folders", currentFolderId],
     queryFn: async () => {
       const param = currentFolderId ?? "root";
-      const res = await fetch(`/api/folders?parent_id=${param}`);
+      const res = await vaultFetch(`/api/folders?parent_id=${param}`);
       if (!res.ok) throw new Error("Failed");
       const j = (await res.json()) as { folders: FolderRow[] };
       return j.folders;
@@ -146,7 +147,7 @@ export function FileManager() {
   const filesQuery = useQuery({
     queryKey: ["files", q, kind, sort, currentFolderId],
     queryFn: async () => {
-      const res = await fetch(`/api/files?${params.toString()}`);
+      const res = await vaultFetch(`/api/files?${params.toString()}`);
       if (!res.ok) throw new Error("Failed");
       const j = (await res.json()) as { files: FileRow[] };
       return j.files;
@@ -155,7 +156,7 @@ export function FileManager() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/files/${id}`, { method: "DELETE" });
+      const res = await vaultFetch(`/api/files/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Delete failed");
     },
     onSuccess: () => {
@@ -167,7 +168,7 @@ export function FileManager() {
 
   const deleteFolderMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/folders/${id}`, { method: "DELETE" });
+      const res = await vaultFetch(`/api/folders/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Delete failed");
     },
     onSuccess: () => {
@@ -180,7 +181,7 @@ export function FileManager() {
 
   const renameFolderMutation = useMutation({
     mutationFn: async ({ id, name }: { id: string; name: string }) => {
-      const res = await fetch(`/api/folders/${id}`, {
+      const res = await vaultFetch(`/api/folders/${id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ name }),
@@ -197,7 +198,7 @@ export function FileManager() {
 
   const moveFileMutation = useMutation({
     mutationFn: async ({ fileId, folderId }: { fileId: string; folderId: string | null }) => {
-      const res = await fetch(`/api/files/${fileId}`, {
+      const res = await vaultFetch(`/api/files/${fileId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ folder_id: folderId }),
@@ -218,7 +219,7 @@ export function FileManager() {
       setBreadcrumbs([]);
     } else {
       try {
-        const res = await fetch(`/api/folders/${folderId}`);
+          const res = await vaultFetch(`/api/folders/${folderId}`);
         if (res.ok) {
           const data = (await res.json()) as { folder: FolderRow; breadcrumbs: FolderRow[] };
           setBreadcrumbs(data.breadcrumbs.map((b) => ({ id: b.id, name: b.name })));
@@ -707,7 +708,7 @@ function GridCard({
         <div className="aspect-square bg-muted flex items-center justify-center relative overflow-hidden">
           {hasThumb ? (
             <img
-              src={`/api/files/${file.id}/thumb`}
+              src={vaultUrl(`/api/files/${file.id}/thumb`)}
               alt=""
               loading="lazy"
               className="h-full w-full object-cover"
@@ -734,7 +735,7 @@ function GridCard({
       </button>
       <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <a
-          href={`/api/files/${file.id}/stream?dl=1`}
+          href={vaultUrl(`/api/files/${file.id}/stream?dl=1`)}
           className="h-7 w-7 flex items-center justify-center rounded-md bg-background/80 backdrop-blur border border-border text-muted-foreground hover:text-foreground"
           aria-label="Download"
         >
@@ -875,7 +876,7 @@ function ListView({
                 <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                   <div className="flex justify-end gap-1">
                     <a
-                      href={`/api/files/${f.id}/stream?dl=1`}
+                      href={vaultUrl(`/api/files/${f.id}/stream?dl=1`)}
                       className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
                       aria-label="Download"
                     >

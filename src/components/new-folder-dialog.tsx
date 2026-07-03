@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FolderPlus } from "lucide-react";
 import { toast } from "sonner";
+import { vaultFetch } from "@/lib/vault-client";
 
 export function NewFolderDialog({
   open,
@@ -30,7 +31,7 @@ export function NewFolderDialog({
     if (!trimmed) return;
     setLoading(true);
     try {
-      const res = await fetch("/api/folders", {
+      const res = await vaultFetch("/api/folders", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ name: trimmed, parent_id: parentId }),
