@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,7 @@ export const Route = createFileRoute("/unlock")({
 function Unlock() {
   const nav = useNavigate();
   const qc = useQueryClient();
-  const [passcode, setPasscode] = useState("");
+  const passcodeRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,6 +21,7 @@ function Unlock() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    const passcode = passcodeRef.current?.value ?? "";
     try {
       const res = await fetch("/api/unlock", {
         method: "POST",
@@ -57,16 +58,15 @@ function Unlock() {
           </div>
         </div>
         <Input
+          ref={passcodeRef}
           type="password"
-          value={passcode}
-          onChange={(e) => setPasscode(e.target.value)}
           placeholder="Passcode"
           autoFocus
           autoComplete="current-password"
           className="mb-3"
         />
         {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
-        <Button type="submit" disabled={loading || !passcode} className="w-full">
+        <Button type="submit" disabled={loading} className="w-full">
           {loading ? "Unlocking…" : "Unlock"}
         </Button>
       </form>
