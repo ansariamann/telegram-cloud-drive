@@ -1,21 +1,13 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { FileManager } from "@/components/file-manager";
-import { useUnlockStatus } from "@/hooks/use-unlock";
+import { getAuthStatus } from "@/lib/auth-guard.server";
 
 export const Route = createFileRoute("/")({
-  component: Home,
+  // Server-side guard: runs before any HTML is sent.
+  // Unauthenticated requests are redirected at the server, not after React boots.
+  loader: async () => {
+    const { unlocked } = await getAuthStatus();
+    if (!unlocked) throw redirect({ to: "/unlock", replace: true });
+  },
+  component: FileManager,
 });
-
-function Home() {
-  const nav = useNavigate();
-  const { data, isLoading } = useUnlockStatus();
-  useEffect(() => {
-    if (!isLoading && data && !data.unlocked) {
-      nav({ to: "/unlock" });
-    }
-  }, [isLoading, data, nav]);
-  if (isLoading) return <div className="min-h-screen bg-background" />;
-  if (!data?.unlocked) return null;
-  return <FileManager />;
-}

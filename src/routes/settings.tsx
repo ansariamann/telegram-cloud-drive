@@ -1,16 +1,24 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { setVaultSession, vaultFetch } from "@/lib/vault-client";
+import { getAuthStatus } from "@/lib/auth-guard.server";
 
 export const Route = createFileRoute("/settings")({
+  // Server-side guard — same as index route
+  loader: async () => {
+    const { unlocked } = await getAuthStatus();
+    if (!unlocked) throw redirect({ to: "/unlock", replace: true });
+  },
   component: Settings,
 });
 
 function Settings() {
   const nav = useNavigate();
-  const [chats, setChats] = useState<Array<{ id: number; title: string; type: string }> | null>(null);
+  const [chats, setChats] = useState<Array<{ id: number; title: string; type: string }> | null>(
+    null,
+  );
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -24,7 +32,9 @@ function Settings() {
         return;
       }
       if (!res.ok) throw new Error(await res.text());
-      const data = (await res.json()) as { chats: Array<{ id: number; title: string; type: string }> };
+      const data = (await res.json()) as {
+        chats: Array<{ id: number; title: string; type: string }>;
+      };
       setChats(data.chats);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed");
@@ -53,8 +63,9 @@ function Settings() {
         <section>
           <h2 className="text-base font-semibold mb-1">Detect chat ID</h2>
           <p className="text-sm text-muted-foreground mb-4">
-            Send any message to your private group after adding the bot. Then click below to see which chats the bot can see.
-            Use that ID as <code className="text-xs bg-muted px-1.5 py-0.5 rounded">TELEGRAM_CHAT_ID</code>.
+            Send any message to your private group after adding the bot. Then click below to see
+            which chats the bot can see. Use that ID as{" "}
+            <code className="text-xs bg-muted px-1.5 py-0.5 rounded">TELEGRAM_CHAT_ID</code>.
           </p>
           <Button onClick={fetchChats} disabled={loading} variant="secondary">
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
@@ -94,14 +105,16 @@ function Settings() {
         <section>
           <h2 className="text-base font-semibold mb-1">Session</h2>
           <p className="text-sm text-muted-foreground mb-4">Sign out and require passcode again.</p>
-          <Button onClick={lock} variant="destructive">Lock vault</Button>
+          <Button onClick={lock} variant="destructive">
+            Lock vault
+          </Button>
         </section>
 
         <section>
           <h2 className="text-base font-semibold mb-1">Limits</h2>
           <p className="text-sm text-muted-foreground">
-            Files up to 45MB upload as a single Telegram document. Larger files are automatically split into 45MB parts
-            (Telegram Bot API limit) and stitched back together on download.
+            Files up to 45MB upload as a single Telegram document. Larger files are automatically
+            split into 45MB parts (Telegram Bot API limit) and stitched back together on download.
           </p>
         </section>
       </main>

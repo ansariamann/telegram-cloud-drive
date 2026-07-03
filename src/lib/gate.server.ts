@@ -9,14 +9,25 @@ function sign(value: string): string {
   return createHmac("sha256", secret).update(value).digest("base64url");
 }
 
+function isSecureRequest(): boolean {
+  try {
+    const request = getRequest();
+    const proto = request.headers.get("x-forwarded-proto") || "";
+    return request.url.startsWith("https:") || proto.toLowerCase() === "https";
+  } catch {
+    return false;
+  }
+}
+
 export function issueSession(): string {
   const payload = `unlocked.${Date.now()}`;
   const sig = sign(payload);
   const session = `${payload}.${sig}`;
+  const isSecure = isSecureRequest();
   setCookie(COOKIE_NAME, session, {
     httpOnly: true,
-    secure: true,
-    sameSite: "none",
+    secure: isSecure,
+    sameSite: isSecure ? "none" : "lax",
     path: "/",
     maxAge: MAX_AGE,
   });
@@ -24,10 +35,11 @@ export function issueSession(): string {
 }
 
 export function clearSession() {
+  const isSecure = isSecureRequest();
   setCookie(COOKIE_NAME, "", {
     httpOnly: true,
-    secure: true,
-    sameSite: "none",
+    secure: isSecure,
+    sameSite: isSecure ? "none" : "lax",
     path: "/",
     maxAge: 0,
   });

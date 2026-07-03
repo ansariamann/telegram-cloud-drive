@@ -1,12 +1,16 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { setVaultSession } from "@/lib/vault-client";
+import { getAuthStatus } from "@/lib/auth-guard.server";
 
 export const Route = createFileRoute("/unlock")({
+  loader: async () => {
+    const { unlocked } = await getAuthStatus();
+    if (unlocked) throw redirect({ to: "/", replace: true });
+  },
   component: Unlock,
 });
 
@@ -33,8 +37,6 @@ function Unlock() {
         setError("Incorrect passcode");
         return;
       }
-      const data = (await res.json()) as { ok: true; session?: string };
-      if (data.session) setVaultSession(data.session);
       await qc.invalidateQueries({ queryKey: ["unlock-status"] });
       await nav({ to: "/" });
     } finally {

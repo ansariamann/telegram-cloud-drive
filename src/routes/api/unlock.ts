@@ -10,8 +10,8 @@ export const Route = createFileRoute("/api/unlock")({
         if (!verifyPasscode(passcode)) {
           return Response.json({ ok: false }, { status: 401 });
         }
-        const session = issueSession();
-        return Response.json({ ok: true, session });
+        issueSession();
+        return Response.json({ ok: true });
       },
     },
   },

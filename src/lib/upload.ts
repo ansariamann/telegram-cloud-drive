@@ -1,5 +1,3 @@
-import { getVaultSession } from "@/lib/vault-client";
-
 const CHUNK_SIZE = 45 * 1024 * 1024; // 45 MB (Telegram Bot API limit is 50 MB)
 const MAX_RETRIES = 3;
 
@@ -31,9 +29,6 @@ function uploadChunkXHR(
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/upload-chunk");
 
-    // Auth header — same logic as vaultFetch
-    const session = getVaultSession();
-    if (session) xhr.setRequestHeader("authorization", `Bearer ${session}`);
     xhr.withCredentials = true;
 
     // Abort support
@@ -145,13 +140,9 @@ export async function uploadFile(
     onProgress({ loaded: baseLoaded, total: file.size, partIndex: i + 1, totalParts });
   }
 
-  const session = getVaultSession();
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  if (session) headers["authorization"] = `Bearer ${session}`;
-
   const fin = await fetch("/api/upload-finalize", {
     method: "POST",
-    headers,
+    headers: { "content-type": "application/json" },
     credentials: "include",
     body: JSON.stringify({
       filename: file.name,
