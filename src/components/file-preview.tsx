@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FolderPicker } from "@/components/folder-picker";
 import { toast } from "sonner";
+import { vaultFetch, vaultUrl } from "@/lib/vault-client";
 
 type FileDetail = {
   id: string;
@@ -39,7 +40,7 @@ export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () =
   const { data, isLoading } = useQuery({
     queryKey: ["file", fileId],
     queryFn: async () => {
-      const res = await fetch(`/api/files/${fileId}`);
+      const res = await vaultFetch(`/api/files/${fileId}`);
       if (!res.ok) throw new Error("Not found");
       return (await res.json()) as { file: FileDetail; token: string };
     },
@@ -50,7 +51,7 @@ export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () =
     queryKey: ["folder-breadcrumbs", data?.file?.folder_id],
     queryFn: async () => {
       if (!data?.file?.folder_id) return null;
-      const res = await fetch(`/api/folders/${data.file.folder_id}`);
+      const res = await vaultFetch(`/api/folders/${data.file.folder_id}`);
       if (!res.ok) return null;
       return (await res.json()) as { folder: FolderBreadcrumb; breadcrumbs: FolderBreadcrumb[] };
     },
@@ -59,7 +60,7 @@ export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () =
 
   const rename = useMutation({
     mutationFn: async (filename: string) => {
-      const res = await fetch(`/api/files/${fileId}`, {
+      const res = await vaultFetch(`/api/files/${fileId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ filename }),
@@ -77,7 +78,7 @@ export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () =
 
   const moveMutation = useMutation({
     mutationFn: async (folderId: string | null) => {
-      const res = await fetch(`/api/files/${fileId}`, {
+      const res = await vaultFetch(`/api/files/${fileId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ folder_id: folderId }),
@@ -95,7 +96,7 @@ export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () =
 
   const del = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/files/${fileId}`, { method: "DELETE" });
+      const res = await vaultFetch(`/api/files/${fileId}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Delete failed");
     },
     onSuccess: () => {
@@ -189,7 +190,7 @@ export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () =
 
               <div className="mt-6 flex flex-col gap-2">
                 <a
-                  href={`/api/files/${fileId}/stream?dl=1`}
+                  href={vaultUrl(`/api/files/${fileId}/stream?dl=1`)}
                   className="inline-flex items-center justify-center h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
                 >
                   <Download className="h-4 w-4 mr-1.5" />
@@ -239,7 +240,7 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
 }
 
 function PreviewBody({ file }: { file: FileDetail }) {
-  const src = `/api/files/${file.id}/stream`;
+  const src = vaultUrl(`/api/files/${file.id}/stream`);
   if (file.kind === "image") {
     return <img src={src} alt={file.filename} className="max-h-full max-w-full object-contain rounded-md" />;
   }

@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { setVaultSession, vaultFetch } from "@/lib/vault-client";
 
 export const Route = createFileRoute("/settings")({
   component: Settings,
@@ -17,7 +18,7 @@ function Settings() {
     setLoading(true);
     setErr(null);
     try {
-      const res = await fetch("/api/whoami");
+      const res = await vaultFetch("/api/whoami");
       if (res.status === 401) {
         await nav({ to: "/unlock" });
         return;
@@ -33,7 +34,8 @@ function Settings() {
   }
 
   async function lock() {
-    await fetch("/api/lock", { method: "POST" });
+    await vaultFetch("/api/lock", { method: "POST" });
+    setVaultSession(null);
     await nav({ to: "/unlock" });
   }
 

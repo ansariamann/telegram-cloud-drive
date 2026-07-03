@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Folder, ChevronRight, Home } from "lucide-react";
 import { toast } from "sonner";
+import { vaultFetch } from "@/lib/vault-client";
 
 type FolderItem = {
   id: string;
@@ -46,7 +47,7 @@ export function FolderPicker({
     if (!open) return;
     setLoading(true);
     const param = browseFolderId ?? "root";
-    fetch(`/api/folders?parent_id=${param}`)
+    vaultFetch(`/api/folders?parent_id=${param}`)
       .then((r) => r.json())
       .then((d: { folders: FolderItem[] }) => setFolders(d.folders))
       .catch(() => toast.error("Failed to load folders"))
