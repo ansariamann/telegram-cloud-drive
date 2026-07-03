@@ -46,6 +46,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
@@ -168,6 +169,7 @@ export function FileManager() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
   const [bulkDownloading, setBulkDownloading] = useState(false);
+  const [folderDownloading, setFolderDownloading] = useState<string | null>(null);
 
   // Clear selection when navigating folders or searching
   useEffect(() => {
@@ -346,6 +348,44 @@ export function FileManager() {
       setBulkDownloading(false);
     }
   }, [selectedIds]);
+
+  // Download all files in a folder as ZIP
+  const handleFolderDownload = useCallback(async (folderId: string, folderName: string) => {
+    setFolderDownloading(folderId);
+    try {
+      // Fetch all files in this folder
+      const res = await vaultFetch(`/api/files?folder_id=${folderId}&sort=name_asc`);
+      if (!res.ok) throw new Error("Failed to list folder files");
+      const { files: folderFiles } = (await res.json()) as { files: Array<{ id: string }> };
+      if (folderFiles.length === 0) {
+        toast.info(`"${folderName}" is empty`);
+        return;
+      }
+      const ids = folderFiles.map((f) => f.id);
+      const zipRes = await vaultFetch("/api/files/download-zip", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (!zipRes.ok) throw new Error(`ZIP failed: ${zipRes.status}`);
+      const blob = await zipRes.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${folderName}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(
+        `Downloaded "${folderName}" (${ids.length} file${ids.length !== 1 ? "s" : ""}) as ZIP`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Folder download failed");
+    } finally {
+      setFolderDownloading(null);
+    }
+  }, []);
 
   // Navigate into folder
   const navigateToFolder = useCallback(async (folderId: string | null) => {
@@ -621,75 +661,152 @@ export function FileManager() {
             searchQuery={q}
             onClearSearch={() => setQ("")}
           />
-        ) : view === "grid" ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-            {/* Folders first */}
-            {folders.map((f) => (
-              <FolderGridCard
-                key={f.id}
-                folder={f}
-                onOpen={() => navigateToFolder(f.id)}
-                onRename={() => {
-                  setRenamingFolderId(f.id);
-                  setFolderNewName(f.name);
-                }}
-                onDelete={() => setPendingDelete({ type: "folder", id: f.id, name: f.name })}
-                isRenaming={renamingFolderId === f.id}
-                renameName={folderNewName}
-                onRenameChange={setFolderNewName}
-                onRenameSubmit={() => {
-                  if (folderNewName.trim())
-                    renameFolderMutation.mutate({ id: f.id, name: folderNewName.trim() });
-                }}
-                onRenameCancel={() => setRenamingFolderId(null)}
-              />
-            ))}
-            {/* Then files */}
-            {files.map((f) => (
-              <GridCard
-                key={f.id}
-                file={f}
-                selected={selectedIds.has(f.id)}
-                anySelected={selectedIds.size > 0}
-                onSelect={() => toggleSelect(f.id)}
-                onOpen={() => setPreviewId(f.id)}
-                onDelete={() => setPendingDelete({ type: "file", id: f.id, name: f.filename })}
-                onMove={() => {
-                  setMoveFileId(f.id);
+        ) : (
+          <>
+            {/* ── Select-all bar (only when files exist) ── */}
+            {files.length > 0 && (
+              <div className="mb-3 flex items-center gap-3 px-1">
+                <button
+                  onClick={() => selectAll(allFileIds)}
+                  className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors group"
+                  aria-label={allSelected ? "Deselect all" : "Select all files"}
+                >
+                  <div
+                    className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${
+                      allSelected
+                        ? "bg-primary border-primary text-primary-foreground"
+                        : selectedIds.size > 0
+                          ? "bg-primary/30 border-primary"
+                          : "border-border group-hover:border-primary/60"
+                    }`}
+                  >
+                    {allSelected ? (
+                      <svg viewBox="0 0 10 8" className="h-2.5 w-2.5 fill-current">
+                        <path
+                          d="M1 4l3 3 5-6"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          fill="none"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    ) : selectedIds.size > 0 ? (
+                      <svg viewBox="0 0 10 2" className="h-2 w-2.5 fill-current">
+                        <rect x="0" y="0" width="10" height="2" rx="1" fill="currentColor" />
+                      </svg>
+                    ) : null}
+                  </div>
+                  <span>
+                    {allSelected
+                      ? `Deselect all ${files.length} files`
+                      : selectedIds.size > 0
+                        ? `${selectedIds.size} of ${files.length} selected — select all`
+                        : `Select all ${files.length} files`}
+                  </span>
+                </button>
+                {selectedIds.size > 0 && (
+                  <button
+                    onClick={() => setSelectedIds(new Set())}
+                    className="text-xs text-muted-foreground hover:text-foreground ml-1"
+                  >
+                    Clear
+                  </button>
+                )}
+                {allSelected && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="ml-auto h-7 text-xs"
+                    onClick={handleBulkDownload}
+                    disabled={bulkDownloading}
+                  >
+                    {bulkDownloading ? (
+                      <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                    ) : (
+                      <Download className="h-3 w-3 mr-1.5" />
+                    )}
+                    {bulkDownloading ? "Preparing…" : `Download all ${files.length} files`}
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {view === "grid" ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                {/* Folders first */}
+                {folders.map((f) => (
+                  <FolderGridCard
+                    key={f.id}
+                    folder={f}
+                    onOpen={() => navigateToFolder(f.id)}
+                    onRename={() => {
+                      setRenamingFolderId(f.id);
+                      setFolderNewName(f.name);
+                    }}
+                    onDelete={() => setPendingDelete({ type: "folder", id: f.id, name: f.name })}
+                    onDownload={() => handleFolderDownload(f.id, f.name)}
+                    isDownloading={folderDownloading === f.id}
+                    isRenaming={renamingFolderId === f.id}
+                    renameName={folderNewName}
+                    onRenameChange={setFolderNewName}
+                    onRenameSubmit={() => {
+                      if (folderNewName.trim())
+                        renameFolderMutation.mutate({ id: f.id, name: folderNewName.trim() });
+                    }}
+                    onRenameCancel={() => setRenamingFolderId(null)}
+                  />
+                ))}
+                {/* Then files */}
+                {files.map((f) => (
+                  <GridCard
+                    key={f.id}
+                    file={f}
+                    selected={selectedIds.has(f.id)}
+                    anySelected={selectedIds.size > 0}
+                    onSelect={() => toggleSelect(f.id)}
+                    onOpen={() => setPreviewId(f.id)}
+                    onDelete={() => setPendingDelete({ type: "file", id: f.id, name: f.filename })}
+                    onMove={() => {
+                      setMoveFileId(f.id);
+                      setMovePickerOpen(true);
+                    }}
+                  />
+                ))}
+              </div>
+            ) : (
+              <ListView
+                folders={folders}
+                files={files}
+                selectedIds={selectedIds}
+                allSelected={allSelected}
+                onSelectAll={() => selectAll(allFileIds)}
+                onSelectFile={toggleSelect}
+                onOpenFile={(id) => setPreviewId(id)}
+                onOpenFolder={(id) => navigateToFolder(id)}
+                onDeleteFile={(id, name) => setPendingDelete({ type: "file", id, name })}
+                onDeleteFolder={(id, name) => setPendingDelete({ type: "folder", id, name })}
+                onDownloadFolder={(id, name) => handleFolderDownload(id, name)}
+                folderDownloading={folderDownloading}
+                onMoveFile={(id) => {
+                  setMoveFileId(id);
                   setMovePickerOpen(true);
                 }}
+                onRenameFolder={(id, name) => {
+                  setRenamingFolderId(id);
+                  setFolderNewName(name);
+                }}
+                renamingFolderId={renamingFolderId}
+                folderNewName={folderNewName}
+                onFolderNewNameChange={setFolderNewName}
+                onFolderRenameSubmit={(id) => {
+                  if (folderNewName.trim())
+                    renameFolderMutation.mutate({ id, name: folderNewName.trim() });
+                }}
+                onFolderRenameCancel={() => setRenamingFolderId(null)}
               />
-            ))}
-          </div>
-        ) : (
-          <ListView
-            folders={folders}
-            files={files}
-            selectedIds={selectedIds}
-            allSelected={allSelected}
-            onSelectAll={() => selectAll(allFileIds)}
-            onSelectFile={toggleSelect}
-            onOpenFile={(id) => setPreviewId(id)}
-            onOpenFolder={(id) => navigateToFolder(id)}
-            onDeleteFile={(id, name) => setPendingDelete({ type: "file", id, name })}
-            onDeleteFolder={(id, name) => setPendingDelete({ type: "folder", id, name })}
-            onMoveFile={(id) => {
-              setMoveFileId(id);
-              setMovePickerOpen(true);
-            }}
-            onRenameFolder={(id, name) => {
-              setRenamingFolderId(id);
-              setFolderNewName(name);
-            }}
-            renamingFolderId={renamingFolderId}
-            folderNewName={folderNewName}
-            onFolderNewNameChange={setFolderNewName}
-            onFolderRenameSubmit={(id) => {
-              if (folderNewName.trim())
-                renameFolderMutation.mutate({ id, name: folderNewName.trim() });
-            }}
-            onFolderRenameCancel={() => setRenamingFolderId(null)}
-          />
+            )}
+          </>
         )}
       </main>
 
@@ -955,6 +1072,8 @@ function FolderGridCard({
   onOpen,
   onRename,
   onDelete,
+  onDownload,
+  isDownloading,
   isRenaming,
   renameName,
   onRenameChange,
@@ -965,6 +1084,8 @@ function FolderGridCard({
   onOpen: () => void;
   onRename: () => void;
   onDelete: () => void;
+  onDownload: () => void;
+  isDownloading: boolean;
   isRenaming: boolean;
   renameName: string;
   onRenameChange: (name: string) => void;
@@ -1009,10 +1130,19 @@ function FolderGridCard({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onDownload} disabled={isDownloading}>
+              {isDownloading ? (
+                <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5 mr-2" />
+              )}
+              {isDownloading ? "Preparing ZIP…" : "Download as ZIP"}
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={onRename}>
               <Pencil className="h-3.5 w-3.5 mr-2" />
               Rename
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={onDelete}
               className="text-destructive focus:text-destructive"
@@ -1143,6 +1273,8 @@ function ListView({
   onOpenFolder,
   onDeleteFile,
   onDeleteFolder,
+  onDownloadFolder,
+  folderDownloading,
   onMoveFile,
   onRenameFolder,
   renamingFolderId,
@@ -1161,6 +1293,8 @@ function ListView({
   onOpenFolder: (id: string) => void;
   onDeleteFile: (id: string, name: string) => void;
   onDeleteFolder: (id: string, name: string) => void;
+  onDownloadFolder: (id: string, name: string) => void;
+  folderDownloading: string | null;
   onMoveFile: (id: string) => void;
   onRenameFolder: (id: string, name: string) => void;
   renamingFolderId: string | null;
@@ -1233,6 +1367,19 @@ function ListView({
               </td>
               <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                 <div className="flex justify-end gap-1">
+                  <button
+                    onClick={() => onDownloadFolder(f.id, f.name)}
+                    disabled={folderDownloading === f.id}
+                    className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50"
+                    aria-label="Download folder as ZIP"
+                    title="Download as ZIP"
+                  >
+                    {folderDownloading === f.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5" />
+                    )}
+                  </button>
                   <button
                     onClick={() => onRenameFolder(f.id, f.name)}
                     className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"

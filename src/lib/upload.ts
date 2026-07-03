@@ -1,4 +1,4 @@
-import { vaultFetch } from "@/lib/vault-client";
+import { getVaultSession } from "@/lib/vault-client";
 
 const CHUNK_SIZE = 45 * 1024 * 1024; // 45 MB (Telegram Bot API limit is 50 MB)
 const MAX_RETRIES = 3;
@@ -18,18 +18,73 @@ export type UploadProgress = {
   totalParts: number;
 };
 
+/**
+ * Upload a single chunk via XHR so we get real byte-level upload progress events.
+ * Falls back gracefully if XHR is unavailable (SSR context).
+ */
+function uploadChunkXHR(
+  form: FormData,
+  signal: AbortSignal | undefined,
+  onBytesSent: (sent: number, total: number) => void,
+): Promise<UploadPart> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/upload-chunk");
+
+    // Auth header — same logic as vaultFetch
+    const session = getVaultSession();
+    if (session) xhr.setRequestHeader("authorization", `Bearer ${session}`);
+    xhr.withCredentials = true;
+
+    // Abort support
+    const abortHandler = () => xhr.abort();
+    signal?.addEventListener("abort", abortHandler);
+
+    // Real byte-level upload progress
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onBytesSent(e.loaded, e.total);
+    };
+
+    xhr.onload = () => {
+      signal?.removeEventListener("abort", abortHandler);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as UploadPart);
+        } catch {
+          reject(new Error("Invalid JSON response from server"));
+        }
+      } else {
+        reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
+      }
+    };
+
+    xhr.onerror = () => {
+      signal?.removeEventListener("abort", abortHandler);
+      reject(new Error("Network error during upload"));
+    };
+
+    xhr.onabort = () => {
+      signal?.removeEventListener("abort", abortHandler);
+      const err = new Error("Upload cancelled");
+      err.name = "AbortError";
+      reject(err);
+    };
+
+    xhr.send(form);
+  });
+}
+
 async function uploadChunkWithRetry(
   form: FormData,
   signal: AbortSignal | undefined,
   partLabel: string,
+  onBytesSent: (sent: number, total: number) => void,
 ): Promise<UploadPart> {
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     if (signal?.aborted) throw new Error("Upload cancelled");
     try {
-      const res = await vaultFetch("/api/upload-chunk", { method: "POST", body: form, signal });
-      if (!res.ok) throw new Error(`${partLabel} failed: ${res.status}`);
-      return (await res.json()) as UploadPart;
+      return await uploadChunkXHR(form, signal, onBytesSent);
     } catch (err) {
       // Don't retry on abort
       if (err instanceof Error && err.name === "AbortError") throw err;
@@ -52,13 +107,17 @@ export async function uploadFile(
   const totalParts = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
   const parts: UploadPart[] = [];
   let firstThumb: string | null = null;
-  let loaded = 0;
+
+  // Bytes already fully uploaded (completed chunks)
+  let baseLoaded = 0;
 
   for (let i = 0; i < totalParts; i++) {
     if (signal?.aborted) throw new Error("Upload cancelled");
     const start = i * CHUNK_SIZE;
     const end = Math.min(start + CHUNK_SIZE, file.size);
+    const chunkSize = end - start;
     const slice = file.slice(start, end);
+
     const form = new FormData();
     form.set("blob", slice, file.name);
     form.set("filename", file.name);
@@ -66,16 +125,34 @@ export async function uploadFile(
     form.set("index", String(i));
     form.set("totalParts", String(totalParts));
 
-    const data = await uploadChunkWithRetry(form, signal, `Part ${i + 1}/${totalParts}`);
+    const capturedBase = baseLoaded; // capture for closure
+
+    const data = await uploadChunkWithRetry(form, signal, `Part ${i + 1}/${totalParts}`, (sent) => {
+      // Fired continuously as bytes are sent — gives true progress bar motion
+      onProgress({
+        loaded: capturedBase + sent,
+        total: file.size,
+        partIndex: i + 1,
+        totalParts,
+      });
+    });
+
     parts.push(data);
     if (i === 0 && data.thumb_file_id) firstThumb = data.thumb_file_id;
-    loaded += end - start;
-    onProgress({ loaded, total: file.size, partIndex: i + 1, totalParts });
+    baseLoaded += chunkSize;
+
+    // Emit a clean 100% for this chunk once fully confirmed
+    onProgress({ loaded: baseLoaded, total: file.size, partIndex: i + 1, totalParts });
   }
 
-  const fin = await vaultFetch("/api/upload-finalize", {
+  const session = getVaultSession();
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (session) headers["authorization"] = `Bearer ${session}`;
+
+  const fin = await fetch("/api/upload-finalize", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers,
+    credentials: "include",
     body: JSON.stringify({
       filename: file.name,
       mime: file.type || "application/octet-stream",
