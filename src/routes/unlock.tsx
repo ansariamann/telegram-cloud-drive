@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ export const Route = createFileRoute("/unlock")({
 
 function Unlock() {
   const nav = useNavigate();
+  const qc = useQueryClient();
   const [passcode, setPasscode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +30,7 @@ function Unlock() {
         setError("Incorrect passcode");
         return;
       }
+      await qc.invalidateQueries({ queryKey: ["unlock-status"] });
       await nav({ to: "/" });
     } finally {
       setLoading(false);
