@@ -18,7 +18,6 @@ export type Database = {
         Row: {
           created_at: string
           filename: string
-          folder_id: string | null
           id: string
           kind: string
           mime: string
@@ -31,7 +30,6 @@ export type Database = {
         Insert: {
           created_at?: string
           filename: string
-          folder_id?: string | null
           id?: string
           kind?: string
           mime?: string
@@ -44,7 +42,6 @@ export type Database = {
         Update: {
           created_at?: string
           filename?: string
-          folder_id?: string | null
           id?: string
           kind?: string
           mime?: string
@@ -54,47 +51,7 @@ export type Database = {
           thumb_file_id?: string | null
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "files_folder_id_fkey"
-            columns: ["folder_id"]
-            isOneToOne: false
-            referencedRelation: "folders"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      folders: {
-        Row: {
-          id: string
-          name: string
-          parent_id: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          name: string
-          parent_id?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          parent_id?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "folders_parent_id_fkey"
-            columns: ["parent_id"]
-            isOneToOne: false
-            referencedRelation: "folders"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
     }
     Views: {
