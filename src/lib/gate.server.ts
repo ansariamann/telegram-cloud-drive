@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual, createHmac } from "node:crypto";
 import { getCookie, getRequest, setCookie } from "@tanstack/react-start/server";
 
 const COOKIE_NAME = "tfv_session";
-const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+const MAX_AGE = 15 * 60; // 15 minutes session duration
 
 function sign(value: string): string {
   const secret = process.env.SESSION_SECRET!;
@@ -29,7 +29,6 @@ export function issueSession(): string {
     secure: isSecure,
     sameSite: isSecure ? "none" : "lax",
     path: "/",
-    maxAge: MAX_AGE,
   });
   return session;
 }
@@ -79,6 +78,11 @@ function isValidSession(raw: string): boolean {
 export function requireUnlocked() {
   if (!isUnlocked()) {
     throw new Response("Locked", { status: 401 });
+  }
+  try {
+    issueSession();
+  } catch {
+    // ignore if running outside request context
   }
 }
 

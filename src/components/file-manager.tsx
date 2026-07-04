@@ -41,8 +41,7 @@ import { NewFolderDialog } from "@/components/new-folder-dialog";
 import { FolderPicker } from "@/components/folder-picker";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { vaultFetch, vaultUrl } from "@/lib/vault-client";
-import { toast } from "sonner";
-import { Toaster } from "@/components/ui/sonner";
+
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -188,6 +187,31 @@ function groupFilesByDate(files: FileRow[]): Array<{ label: string; files: FileR
 export function FileManager() {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
+
+  // Custom premium notification state
+  const [notification, setNotification] = useState<{
+    message: string;
+    type: "success" | "error" | "info";
+    id: string;
+  } | null>(null);
+
+  const toast = useMemo(() => {
+    const fn = (message: string, type: "success" | "error" | "info" = "success") => {
+      setNotification({ message, type, id: generateId() });
+    };
+    return {
+      success: (msg: string) => fn(msg, "success"),
+      error: (msg: string) => fn(msg, "error"),
+      info: (msg: string) => fn(msg, "info"),
+    };
+  }, []);
+
+  // auto-dismiss notification after 3.5 seconds
+  useEffect(() => {
+    if (!notification) return;
+    const t = setTimeout(() => setNotification(null), 3500);
+    return () => clearTimeout(t);
+  }, [notification]);
   const [kind, setKind] = useState<KindFilter>("all");
   const [sort, setSort] = useState<SortKey>("created_desc");
   const [view, setView] = useState<"grid" | "list">("grid");
@@ -570,7 +594,49 @@ export function FileManager() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <Toaster theme="dark" richColors />
+      {/* Premium Dynamic Notification Pill */}
+      {notification && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none animate-in fade-in slide-in-from-top-5 duration-300">
+          <div className={`flex items-center gap-3 px-6 py-3 rounded-full border shadow-2xl backdrop-blur-xl pointer-events-auto transition-all bg-card/90 border-border/80 text-foreground
+            ${
+              notification.type === "success"
+                ? "shadow-emerald-950/20"
+                : notification.type === "error"
+                  ? "shadow-destructive/10"
+                  : "shadow-primary/10"
+            }`}
+          >
+            {notification.type === "success" && (
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </span>
+            )}
+            {notification.type === "error" && (
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-destructive/20 text-destructive-foreground">
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </span>
+            )}
+            {notification.type === "info" && (
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/20 text-primary">
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </span>
+            )}
+            <span className="text-sm font-semibold tracking-wide">{notification.message}</span>
+            <button
+              onClick={() => setNotification(null)}
+              className="ml-2 text-muted-foreground hover:text-foreground transition-colors rounded-full p-0.5 hover:bg-muted"
+            >
+              <X className="h-4.5 w-4.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur">
