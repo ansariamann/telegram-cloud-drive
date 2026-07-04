@@ -112,6 +112,17 @@ type Uploading = {
   controller: AbortController;
 };
 
+// ---------- ID generation ----------
+// crypto.randomUUID() requires a Secure Context (HTTPS or localhost).
+// This polyfill works on plain HTTP too (e.g. EC2 via bare IP).
+function generateId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // Fallback: timestamp + random hex
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
 // ---------- pending delete state ----------
 type PendingDelete =
   | { type: "file"; id: string; name: string }
@@ -410,7 +421,7 @@ export function FileManager() {
     async (files: File[]) => {
       const tasks = files.map((file) => async () => {
         const controller = new AbortController();
-        const uploadId = crypto.randomUUID();
+        const uploadId = generateId();
         setUploads((u) => [...u, { id: uploadId, file, progress: null, controller }]);
         try {
           await uploadFile(
