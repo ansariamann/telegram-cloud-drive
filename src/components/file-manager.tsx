@@ -516,15 +516,17 @@ export function FileManager() {
       <Toaster theme="dark" richColors />
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur">
-        <div className="mx-auto flex max-w-[1600px] items-center gap-3 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-2">
+        {/* Row 1: Logo + Actions */}
+        <div className="mx-auto flex max-w-[1600px] items-center gap-2 px-4 py-2.5 sm:px-6">
+          <div className="flex items-center gap-2 shrink-0">
             <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/15 text-primary">
               <Archive className="h-4 w-4" />
             </div>
-            <span className="text-sm font-semibold tracking-tight">Vault</span>
+            <span className="text-sm font-semibold tracking-tight hidden sm:inline">Vault</span>
           </div>
 
-          <div className="relative ml-2 flex-1 max-w-xl">
+          {/* Search — full width on mobile (own row), inline on desktop */}
+          <div className="relative flex-1 hidden sm:block max-w-xl mx-2">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={q}
@@ -534,11 +536,12 @@ export function FileManager() {
             />
           </div>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-1.5">
+            {/* Sort — hidden on mobile, shown on sm+ */}
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SortKey)}
-              className="h-9 rounded-md border border-border bg-input px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              className="hidden sm:block h-9 rounded-md border border-border bg-input px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             >
               <option value="created_desc">Newest</option>
               <option value="created_asc">Oldest</option>
@@ -547,10 +550,12 @@ export function FileManager() {
               <option value="size_desc">Largest</option>
               <option value="size_asc">Smallest</option>
             </select>
+
+            {/* View toggle */}
             <div className="flex rounded-md border border-border overflow-hidden">
               <button
                 onClick={() => setView("grid")}
-                className={`px-2.5 h-9 flex items-center ${
+                className={`px-2 h-9 flex items-center ${
                   view === "grid"
                     ? "bg-secondary text-foreground"
                     : "text-muted-foreground hover:text-foreground"
@@ -561,7 +566,7 @@ export function FileManager() {
               </button>
               <button
                 onClick={() => setView("list")}
-                className={`px-2.5 h-9 flex items-center border-l border-border ${
+                className={`px-2 h-9 flex items-center border-l border-border ${
                   view === "list"
                     ? "bg-secondary text-foreground"
                     : "text-muted-foreground hover:text-foreground"
@@ -571,6 +576,7 @@ export function FileManager() {
                 <Rows3 className="h-4 w-4" />
               </button>
             </div>
+
             <Link
               to="/settings"
               className="h-9 w-9 flex items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground"
@@ -578,14 +584,33 @@ export function FileManager() {
             >
               <SettingsIcon className="h-4 w-4" />
             </Link>
-            <Button size="sm" variant="outline" onClick={() => setNewFolderOpen(true)}>
+
+            {/* New Folder — icon-only on mobile */}
+            <button
+              onClick={() => setNewFolderOpen(true)}
+              className="h-9 w-9 flex items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground sm:hidden"
+              aria-label="New folder"
+            >
+              <FolderPlus className="h-4 w-4" />
+            </button>
+            <Button size="sm" variant="outline" onClick={() => setNewFolderOpen(true)} className="hidden sm:flex">
               <FolderPlus className="h-4 w-4 mr-1.5" />
               Folder
             </Button>
-            <Button size="sm" onClick={() => fileInputRef.current?.click()}>
+
+            {/* Upload — icon-only on mobile */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="h-9 w-9 flex items-center justify-center rounded-md bg-primary text-primary-foreground sm:hidden"
+              aria-label="Upload files"
+            >
+              <Upload className="h-4 w-4" />
+            </button>
+            <Button size="sm" onClick={() => fileInputRef.current?.click()} className="hidden sm:flex">
               <Upload className="h-4 w-4 mr-1.5" />
               Upload
             </Button>
+
             <input
               ref={fileInputRef}
               type="file"
@@ -598,6 +623,20 @@ export function FileManager() {
             />
           </div>
         </div>
+
+        {/* Mobile search row */}
+        <div className="sm:hidden px-4 pb-2.5">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search filenames…"
+              className="pl-9 h-9 w-full"
+            />
+          </div>
+        </div>
+
 
         {/* Kind chips */}
         <div className="border-t border-border">
@@ -741,7 +780,7 @@ export function FileManager() {
             )}
 
             {view === "grid" ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3">
                 {/* Folders first */}
                 {folders.map((f) => (
                   <FolderGridCard
@@ -821,44 +860,57 @@ export function FileManager() {
       {/* Bulk action bar */}
       {selectedIds.size > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-card/95 backdrop-blur shadow-2xl">
-          <div className="mx-auto max-w-[1600px] px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
-            <span className="text-sm font-medium text-foreground tabular-nums">
-              {selectedIds.size} file{selectedIds.size !== 1 ? "s" : ""} selected
+          <div className="mx-auto max-w-[1600px] px-3 sm:px-6 py-2.5 flex items-center gap-2">
+            <span className="text-xs sm:text-sm font-medium text-foreground tabular-nums shrink-0">
+              {selectedIds.size} selected
             </span>
-            <div className="flex gap-2 flex-wrap ml-auto">
-              <Button
-                size="sm"
-                variant="outline"
+            <div className="flex gap-1.5 ml-auto items-center">
+              {/* Download — icon only on mobile */}
+              <button
                 onClick={handleBulkDownload}
                 disabled={bulkDownloading}
+                title="Download as ZIP"
+                className="h-8 w-8 sm:hidden flex items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground disabled:opacity-50"
               >
-                {bulkDownloading ? (
-                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                ) : (
-                  <Download className="h-4 w-4 mr-1.5" />
-                )}
-                {bulkDownloading ? "Preparing ZIP…" : "Download as ZIP"}
+                {bulkDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              </button>
+              <Button size="sm" variant="outline" onClick={handleBulkDownload} disabled={bulkDownloading} className="hidden sm:flex">
+                {bulkDownloading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Download className="h-4 w-4 mr-1.5" />}
+                {bulkDownloading ? "Preparing…" : "Download ZIP"}
               </Button>
-              <Button size="sm" variant="outline" onClick={() => setBulkMoveOpen(true)}>
+
+              {/* Move — icon only on mobile */}
+              <button
+                onClick={() => setBulkMoveOpen(true)}
+                title="Move to folder"
+                className="h-8 w-8 sm:hidden flex items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground"
+              >
+                <FolderInput className="h-4 w-4" />
+              </button>
+              <Button size="sm" variant="outline" onClick={() => setBulkMoveOpen(true)} className="hidden sm:flex">
                 <FolderInput className="h-4 w-4 mr-1.5" />
-                Move to folder
+                Move
               </Button>
+
+              {/* Delete */}
+              <button
+                onClick={() => setPendingDelete({ type: "bulk", ids: [...selectedIds], count: selectedIds.size })}
+                title={`Delete ${selectedIds.size} files`}
+                className="h-8 w-8 sm:hidden flex items-center justify-center rounded-md border border-destructive/40 text-destructive hover:bg-destructive/10"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
               <Button
                 size="sm"
                 variant="destructive"
-                onClick={() =>
-                  setPendingDelete({ type: "bulk", ids: [...selectedIds], count: selectedIds.size })
-                }
+                onClick={() => setPendingDelete({ type: "bulk", ids: [...selectedIds], count: selectedIds.size })}
+                className="hidden sm:flex"
               >
                 <Trash2 className="h-4 w-4 mr-1.5" />
                 Delete {selectedIds.size}
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setSelectedIds(new Set())}
-                aria-label="Clear selection"
-              >
+
+              <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())} aria-label="Clear selection">
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -869,9 +921,10 @@ export function FileManager() {
       {/* Upload tray */}
       {uploads.length > 0 && (
         <div
-          className={`fixed z-40 w-80 rounded-lg border border-border bg-card shadow-2xl overflow-hidden transition-all ${
-            selectedIds.size > 0 ? "bottom-20 right-4" : "bottom-4 right-4"
-          }`}
+          className={`fixed z-40 rounded-lg border border-border bg-card shadow-2xl overflow-hidden transition-all
+            left-3 right-3 sm:left-auto sm:right-4 sm:w-80
+            ${selectedIds.size > 0 ? "bottom-20 sm:bottom-20" : "bottom-4"}
+          `}
         >
           <div className="px-3 py-2 border-b border-border flex items-center justify-between text-xs">
             <span className="font-medium">
