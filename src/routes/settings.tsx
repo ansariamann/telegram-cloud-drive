@@ -113,8 +113,8 @@ function Settings() {
         <section>
           <h2 className="text-base font-semibold mb-1">Limits</h2>
           <p className="text-sm text-muted-foreground">
-            Files up to 45MB upload as a single Telegram document. Larger files are automatically
-            split into 45MB parts (Telegram Bot API limit) and stitched back together on download.
+            Files up to 19MB upload as a single Telegram document. Larger files are automatically
+            split into 19MB parts (Telegram Bot API download limit is 20MB) and stitched back together on download.
           </p>
         </section>
       </main>

@@ -1,4 +1,4 @@
-const CHUNK_SIZE = 45 * 1024 * 1024; // 45 MB (Telegram Bot API limit is 50 MB)
+const CHUNK_SIZE = 19 * 1024 * 1024; // 19 MB (Telegram Bot API download limit is 20 MB)
 const MAX_RETRIES = 3;
 const FINALIZE_MAX_RETRIES = 3;
 
