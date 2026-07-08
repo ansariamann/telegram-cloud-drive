@@ -29,13 +29,15 @@ import {
   RotateCcw,
   CheckSquare,
   PackageOpen,
+  AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatBytes, formatDate } from "@/lib/format";
-import { uploadFile, type UploadProgress } from "@/lib/upload";
+import { uploadFile, type UploadProgress, type UploadPhase, hasRecoverableUpload } from "@/lib/upload";
 import { FilePreview } from "@/components/file-preview";
 import { NewFolderDialog } from "@/components/new-folder-dialog";
 import { FolderPicker } from "@/components/folder-picker";
@@ -101,6 +103,22 @@ function kindIcon(kind: string) {
     default:
       return FileIcon;
   }
+}
+
+function getFileKind(mime: string): string {
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("video/")) return "video";
+  if (mime.startsWith("audio/")) return "audio";
+  if (mime === "application/pdf") return "pdf";
+  if (
+    mime.includes("zip") ||
+    mime.includes("rar") ||
+    mime.includes("7z") ||
+    mime.includes("tar") ||
+    mime.includes("gzip")
+  )
+    return "archive";
+  return "other";
 }
 
 type Uploading = {
@@ -1099,65 +1117,157 @@ export function FileManager() {
       {/* Upload tray */}
       {uploads.length > 0 && (
         <div
-          className={`fixed z-40 rounded-2xl border border-border bg-card shadow-2xl overflow-hidden transition-all
-            left-3 right-3 sm:left-auto sm:right-4 sm:w-80
+          className={`fixed z-40 rounded-2xl border border-border/80 bg-card/90 backdrop-blur-xl shadow-2xl overflow-hidden transition-all
+            left-3 right-3 sm:left-auto sm:right-4 sm:w-85
             ${selectedIds.size > 0 ? "bottom-20 sm:bottom-20" : "bottom-4"}
           `}
         >
-          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-            <span className="font-semibold text-sm">
-              Uploads ({uploads.filter((u) => !u.done && !u.error).length} active)
-            </span>
+          <div className="px-4 py-3 border-b border-border/50 bg-muted/40 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Upload className={`h-4 w-4 text-primary ${uploads.some(u => !u.done && !u.error) ? 'animate-bounce' : ''}`} />
+              <span className="font-semibold text-sm text-foreground">
+                File Uploads
+              </span>
+              <span className="px-2 py-0.5 text-[11px] font-medium rounded-full bg-primary/10 text-primary">
+                {uploads.filter((u) => !u.done && !u.error).length} active
+              </span>
+            </div>
             <button
               onClick={() => setUploads((u) => u.filter((x) => !x.done && !x.error))}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Clear finished"
+              className="text-xs text-muted-foreground hover:text-foreground font-medium transition-colors"
+              aria-label="Clear finished uploads"
             >
-              <X className="h-4 w-4" />
+              Clear Completed
             </button>
           </div>
-          <ul className="max-h-72 overflow-y-auto divide-y divide-border">
+          <ul className="max-h-80 overflow-y-auto divide-y divide-border/40">
             {uploads.map((u) => {
               const pct = u.progress ? Math.round((u.progress.loaded / u.progress.total) * 100) : 0;
+              const phase = u.progress?.phase ?? 'uploading';
+              const isWaiting = phase === 'processing' || phase === 'finalizing';
+              const kind = getFileKind(u.file.type);
+              const FileIconComponent = kindIcon(kind);
+              
               return (
-                <li key={u.id} className="px-4 py-3 text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate flex-1">{u.file.name}</span>
-                    <span className="tabular-nums text-muted-foreground shrink-0 text-xs">
-                      {formatBytes(u.file.size)}
-                    </span>
-                    {u.error ? (
-                      <button
-                        onClick={() => retryUpload(u)}
-                        className="text-muted-foreground hover:text-primary"
-                        aria-label="Retry upload"
-                        title="Retry"
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                      </button>
-                    ) : !u.done ? (
-                      <button
-                        onClick={() => cancelUpload(u.id)}
-                        className="text-muted-foreground hover:text-destructive"
-                        aria-label="Cancel upload"
-                        title="Cancel"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    ) : null}
-                  </div>
-                  <div className="mt-2 flex items-center gap-2">
-                    <Progress value={u.done ? 100 : pct} className="h-1.5 flex-1" />
-                    <span className="tabular-nums text-xs w-9 text-right text-muted-foreground">
-                      {u.error ? "err" : u.done ? "100%" : `${pct}%`}
-                    </span>
-                  </div>
-                  {u.progress && u.progress.totalParts > 1 && !u.done && !u.error && (
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      Part {u.progress.partIndex}/{u.progress.totalParts}
+                <li key={u.id} className="p-4 transition-colors hover:bg-muted/10">
+                  <div className="flex items-start gap-3">
+                    <div className={`p-2 rounded-xl shrink-0 ${
+                      u.error 
+                        ? 'bg-destructive/10 text-destructive' 
+                        : u.done 
+                        ? 'bg-emerald-500/10 text-emerald-500' 
+                        : 'bg-primary/5 text-primary'
+                    }`}>
+                      <FileIconComponent className="h-4 w-4" />
                     </div>
-                  )}
-                  {u.error && <div className="mt-1 text-xs text-destructive">{u.error}</div>}
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="truncate font-medium text-sm text-foreground block" title={u.file.name}>
+                          {u.file.name}
+                        </span>
+                        <span className="tabular-nums text-muted-foreground shrink-0 text-xs mt-0.5">
+                          {formatBytes(u.file.size)}
+                        </span>
+                      </div>
+                      
+                      {/* Progress bar line */}
+                      <div className="mt-2.5 flex items-center gap-2">
+                        <Progress 
+                          value={u.done ? 100 : pct} 
+                          className={`h-1.5 flex-1 transition-all ${
+                            u.error 
+                              ? "[&>div]:bg-destructive bg-destructive/20" 
+                              : u.done 
+                              ? "[&>div]:bg-emerald-500 bg-emerald-500/20" 
+                              : isWaiting 
+                              ? "[&>div]:bg-primary/80" 
+                              : ""
+                          }`} 
+                        />
+                        <span className={`tabular-nums text-xs font-semibold w-10 text-right shrink-0 ${
+                          u.error 
+                            ? "text-destructive" 
+                            : u.done 
+                            ? "text-emerald-500" 
+                            : "text-muted-foreground"
+                        }`}>
+                          {u.error ? "Failed" : u.done ? "100%" : `${pct}%`}
+                        </span>
+                      </div>
+
+                      {/* Status / details subtext line */}
+                      <div className="mt-1.5 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-xs">
+                          {u.error ? (
+                            <span className="text-destructive flex items-center gap-1">
+                              <AlertCircle className="h-3 w-3 shrink-0" />
+                              <span>{hasRecoverableUpload(u.file) ? 'Connection failed (Recoverable)' : 'Upload failed'}</span>
+                            </span>
+                          ) : u.done ? (
+                            <span className="text-emerald-500 flex items-center gap-1">
+                              <CheckCircle2 className="h-3 w-3 shrink-0" />
+                              <span>Complete</span>
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground flex items-center gap-1">
+                              {phase === 'processing' && (
+                                <>
+                                  <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />
+                                  <span className="text-primary font-medium animate-pulse">Processing...</span>
+                                </>
+                              )}
+                              {phase === 'finalizing' && (
+                                <>
+                                  <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />
+                                  <span className="text-primary font-medium animate-pulse">Saving to library...</span>
+                                </>
+                              )}
+                              {phase === 'uploading' && (
+                                <>
+                                  {u.progress && u.progress.totalParts > 1 ? (
+                                    <span>Part {u.progress.partIndex} of {u.progress.totalParts}</span>
+                                  ) : (
+                                    <span>Uploading...</span>
+                                  )}
+                                </>
+                              )}
+                            </span>
+                          )}
+                        </div>
+                        
+                        <div className="flex items-center gap-1">
+                          {u.error ? (
+                            <>
+                              {hasRecoverableUpload(u.file) && (
+                                <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded shrink-0">
+                                  Cached
+                                </span>
+                              )}
+                              <button
+                                onClick={() => retryUpload(u)}
+                                className="p-1 rounded-md text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
+                                aria-label="Retry upload"
+                                title="Retry Upload"
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" />
+                              </button>
+                            </>
+                          ) : !u.done ? (
+                            <button
+                              onClick={() => cancelUpload(u.id)}
+                              className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-muted transition-colors"
+                              aria-label="Cancel upload"
+                              title="Cancel Upload"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
                 </li>
               );
             })}
