@@ -216,7 +216,9 @@ async function finalizeWithRetry(
   throw lastError ?? new Error(`Finalize failed after ${FINALIZE_MAX_RETRIES} attempts`);
 }
 
-export async function uploadFile(
+const FILE_UPLOAD_MAX_RETRIES = 3;
+
+async function uploadFileOnce(
   file: File,
   onProgress: (p: UploadProgress) => void,
   folderId?: string | null,
@@ -364,6 +366,31 @@ export async function uploadFile(
   clearChunkCache(file, totalParts);
 
   return result;
+}
+
+export async function uploadFile(
+  file: File,
+  onProgress: (p: UploadProgress) => void,
+  folderId?: string | null,
+  signal?: AbortSignal,
+): Promise<{ id: string; filename: string }> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < FILE_UPLOAD_MAX_RETRIES; attempt++) {
+    if (signal?.aborted) throw new Error("Upload cancelled");
+    try {
+      return await uploadFileOnce(file, onProgress, folderId, signal);
+    } catch (err) {
+      if (err instanceof Error && (err.name === "AbortError" || err.message === "Upload cancelled")) {
+        throw err;
+      }
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < FILE_UPLOAD_MAX_RETRIES - 1) {
+        // Wait before retrying entire file upload flow
+        await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)));
+      }
+    }
+  }
+  throw lastError ?? new Error(`Upload failed for ${file.name}`);
 }
 
 /**
