@@ -514,7 +514,10 @@ export function FileManager() {
   // Concurrent upload pool
   const startUpload = useCallback(
     async (files: File[]) => {
-      const tasks = files.map((file) => async () => {
+      // Sort files by creation order ascending (oldest first, newest last)
+      // so oldest files are uploaded first and newest file is on top when completed
+      const sortedFiles = [...files].sort((a, b) => a.lastModified - b.lastModified);
+      const tasks = sortedFiles.map((file) => async () => {
         const controller = new AbortController();
         const uploadId = generateId();
         setUploads((u) => [...u, { id: uploadId, file, progress: null, controller }]);
