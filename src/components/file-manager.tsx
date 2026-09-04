@@ -42,7 +42,7 @@ import { FilePreview } from "@/components/file-preview";
 import { NewFolderDialog } from "@/components/new-folder-dialog";
 import { FolderPicker } from "@/components/folder-picker";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { vaultFetch, vaultUrl } from "@/lib/vault-client";
+import { vaultFetch, vaultUrl, downloadFileById } from "@/lib/vault-client";
 
 import {
   DropdownMenu,
@@ -1592,13 +1592,18 @@ function GridCard({
 
       {/* Action buttons — show on hover */}
       <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <a
-          href={vaultUrl(`/api/files/${file.id}/stream?dl=1`)}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            downloadFileById(file.id).catch((err) =>
+              toast.error(err instanceof Error ? err.message : "Download failed"),
+            );
+          }}
           className="h-8 w-8 flex items-center justify-center rounded-lg bg-background/80 backdrop-blur border border-border text-muted-foreground hover:text-foreground"
           aria-label="Download"
         >
           <Download className="h-4 w-4" />
-        </a>
+        </button>
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -1795,13 +1800,17 @@ function ListView({
                 </td>
                 <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                   <div className="flex justify-end gap-1.5">
-                    <a
-                      href={vaultUrl(`/api/files/${f.id}/stream?dl=1`)}
+                    <button
+                      onClick={() =>
+                        downloadFileById(f.id).catch((err) =>
+                          toast.error(err instanceof Error ? err.message : "Download failed"),
+                        )
+                      }
                       className="h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                       aria-label="Download"
                     >
                       <Download className="h-4 w-4" />
-                    </a>
+                    </button>
                     <button
                       onClick={() => onMoveFile(f.id)}
                       className="h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
