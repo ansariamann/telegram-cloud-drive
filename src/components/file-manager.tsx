@@ -121,11 +121,14 @@ function getFileKind(mime: string): string {
   return "other";
 }
 
+const AUTO_RETRY_ROUNDS = 3;
+
 type Uploading = {
   id: string;
   file: File;
   progress: UploadProgress | null;
   error?: string;
+  retrying?: number;
   done?: boolean;
   controller: AbortController;
 };
@@ -521,26 +524,48 @@ export function FileManager() {
         const controller = new AbortController();
         const uploadId = generateId();
         setUploads((u) => [...u, { id: uploadId, file, progress: null, controller }]);
-        try {
-          await uploadFile(
-            file,
-            (p) => {
-              setUploads((u) => u.map((x) => (x.id === uploadId ? { ...x, progress: p } : x)));
-            },
-            currentFolderId,
-            controller.signal,
-          );
-          setUploads((u) => u.map((x) => (x.id === uploadId ? { ...x, done: true } : x)));
-          toast.success(`Uploaded ${file.name}`);
-          qc.invalidateQueries({ queryKey: ["files"] });
-          setTimeout(() => setUploads((u) => u.filter((x) => x.id !== uploadId)), 2500);
-        } catch (err) {
-          const message = err instanceof Error ? err.message : "Upload failed";
-          if (message === "Upload cancelled") {
-            setUploads((u) => u.filter((x) => x.id !== uploadId));
-          } else {
-            setUploads((u) => u.map((x) => (x.id === uploadId ? { ...x, error: message } : x)));
-            toast.error(`${file.name}: ${message}`);
+
+        for (let round = 0; round < AUTO_RETRY_ROUNDS; round++) {
+          try {
+            await uploadFile(
+              file,
+              (p) => {
+                setUploads((u) => u.map((x) => (x.id === uploadId ? { ...x, progress: p } : x)));
+              },
+              currentFolderId,
+              controller.signal,
+            );
+            setUploads((u) =>
+              u.map((x) => (x.id === uploadId ? { ...x, done: true, error: undefined, retrying: undefined } : x)),
+            );
+            toast.success(`Uploaded ${file.name}`);
+            qc.invalidateQueries({ queryKey: ["files"] });
+            setTimeout(() => setUploads((u) => u.filter((x) => x.id !== uploadId)), 2500);
+            return;
+          } catch (err) {
+            const message = err instanceof Error ? err.message : "Upload failed";
+            if (message === "Upload cancelled" || controller.signal.aborted) {
+              setUploads((u) => u.filter((x) => x.id !== uploadId));
+              return;
+            }
+            const isLast = round === AUTO_RETRY_ROUNDS - 1;
+            if (isLast) {
+              setUploads((u) =>
+                u.map((x) => (x.id === uploadId ? { ...x, error: message, retrying: undefined } : x)),
+              );
+              toast.error(`${file.name}: ${message}`);
+              return;
+            }
+            // Automatically retry after a short back-off
+            setUploads((u) =>
+              u.map((x) => (x.id === uploadId ? { ...x, error: message, retrying: round + 1 } : x)),
+            );
+            await new Promise((r) => setTimeout(r, 2000 * (round + 1)));
+            if (controller.signal.aborted) {
+              setUploads((u) => u.filter((x) => x.id !== uploadId));
+              return;
+            }
+            setUploads((u) => u.map((x) => (x.id === uploadId ? { ...x, error: undefined } : x)));
           }
         }
       });
@@ -1240,7 +1265,11 @@ export function FileManager() {
                         </div>
                         
                         <div className="flex items-center gap-1">
-                          {u.error ? (
+                          {u.retrying ? (
+                            <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded shrink-0">
+                              Retrying {u.retrying}/{AUTO_RETRY_ROUNDS - 1}
+                            </span>
+                          ) : u.error ? (
                             <>
                               {hasRecoverableUpload(u.file) && (
                                 <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded shrink-0">
