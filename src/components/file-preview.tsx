@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { FolderPicker } from "@/components/folder-picker";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { toast } from "sonner";
-import { vaultFetch, vaultUrl } from "@/lib/vault-client";
+import { vaultFetch, vaultUrl, downloadFileById } from "@/lib/vault-client";
 
 type FileDetail = {
   id: string;
@@ -195,13 +195,17 @@ export function FilePreview({ fileId, onClose }: { fileId: string; onClose: () =
               </dl>
 
               <div className="mt-6 flex flex-col gap-2">
-                <a
-                  href={vaultUrl(`/api/files/${fileId}/stream?dl=1`)}
+                <button
+                  onClick={() =>
+                    downloadFileById(fileId).catch((err) =>
+                      toast.error(err instanceof Error ? err.message : "Download failed"),
+                    )
+                  }
                   className="inline-flex items-center justify-center h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
                 >
                   <Download className="h-4 w-4 mr-1.5" />
                   Download
-                </a>
+                </button>
                 <Button variant="outline" onClick={() => setMoveOpen(true)} className="w-full">
                   <FolderInput className="h-4 w-4 mr-1.5" />
                   Move to Folder

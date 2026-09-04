@@ -42,7 +42,8 @@ import { FilePreview } from "@/components/file-preview";
 import { NewFolderDialog } from "@/components/new-folder-dialog";
 import { FolderPicker } from "@/components/folder-picker";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { vaultFetch, vaultUrl } from "@/lib/vault-client";
+import { vaultFetch, vaultUrl, downloadFileById } from "@/lib/vault-client";
+import { toast as sonnerToast } from "sonner";
 
 import {
   DropdownMenu,
@@ -121,11 +122,14 @@ function getFileKind(mime: string): string {
   return "other";
 }
 
+const AUTO_RETRY_ROUNDS = 3;
+
 type Uploading = {
   id: string;
   file: File;
   progress: UploadProgress | null;
   error?: string;
+  retrying?: number;
   done?: boolean;
   controller: AbortController;
 };
@@ -521,26 +525,48 @@ export function FileManager() {
         const controller = new AbortController();
         const uploadId = generateId();
         setUploads((u) => [...u, { id: uploadId, file, progress: null, controller }]);
-        try {
-          await uploadFile(
-            file,
-            (p) => {
-              setUploads((u) => u.map((x) => (x.id === uploadId ? { ...x, progress: p } : x)));
-            },
-            currentFolderId,
-            controller.signal,
-          );
-          setUploads((u) => u.map((x) => (x.id === uploadId ? { ...x, done: true } : x)));
-          toast.success(`Uploaded ${file.name}`);
-          qc.invalidateQueries({ queryKey: ["files"] });
-          setTimeout(() => setUploads((u) => u.filter((x) => x.id !== uploadId)), 2500);
-        } catch (err) {
-          const message = err instanceof Error ? err.message : "Upload failed";
-          if (message === "Upload cancelled") {
-            setUploads((u) => u.filter((x) => x.id !== uploadId));
-          } else {
-            setUploads((u) => u.map((x) => (x.id === uploadId ? { ...x, error: message } : x)));
-            toast.error(`${file.name}: ${message}`);
+
+        for (let round = 0; round < AUTO_RETRY_ROUNDS; round++) {
+          try {
+            await uploadFile(
+              file,
+              (p) => {
+                setUploads((u) => u.map((x) => (x.id === uploadId ? { ...x, progress: p } : x)));
+              },
+              currentFolderId,
+              controller.signal,
+            );
+            setUploads((u) =>
+              u.map((x) => (x.id === uploadId ? { ...x, done: true, error: undefined, retrying: undefined } : x)),
+            );
+            toast.success(`Uploaded ${file.name}`);
+            qc.invalidateQueries({ queryKey: ["files"] });
+            setTimeout(() => setUploads((u) => u.filter((x) => x.id !== uploadId)), 2500);
+            return;
+          } catch (err) {
+            const message = err instanceof Error ? err.message : "Upload failed";
+            if (message === "Upload cancelled" || controller.signal.aborted) {
+              setUploads((u) => u.filter((x) => x.id !== uploadId));
+              return;
+            }
+            const isLast = round === AUTO_RETRY_ROUNDS - 1;
+            if (isLast) {
+              setUploads((u) =>
+                u.map((x) => (x.id === uploadId ? { ...x, error: message, retrying: undefined } : x)),
+              );
+              toast.error(`${file.name}: ${message}`);
+              return;
+            }
+            // Automatically retry after a short back-off
+            setUploads((u) =>
+              u.map((x) => (x.id === uploadId ? { ...x, error: message, retrying: round + 1 } : x)),
+            );
+            await new Promise((r) => setTimeout(r, 2000 * (round + 1)));
+            if (controller.signal.aborted) {
+              setUploads((u) => u.filter((x) => x.id !== uploadId));
+              return;
+            }
+            setUploads((u) => u.map((x) => (x.id === uploadId ? { ...x, error: undefined } : x)));
           }
         }
       });
@@ -1240,7 +1266,11 @@ export function FileManager() {
                         </div>
                         
                         <div className="flex items-center gap-1">
-                          {u.error ? (
+                          {u.retrying ? (
+                            <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded shrink-0">
+                              Retrying {u.retrying}/{AUTO_RETRY_ROUNDS - 1}
+                            </span>
+                          ) : u.error ? (
                             <>
                               {hasRecoverableUpload(u.file) && (
                                 <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded shrink-0">
@@ -1592,13 +1622,18 @@ function GridCard({
 
       {/* Action buttons — show on hover */}
       <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <a
-          href={vaultUrl(`/api/files/${file.id}/stream?dl=1`)}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            downloadFileById(file.id).catch((err) =>
+              sonnerToast.error(err instanceof Error ? err.message : "Download failed"),
+            );
+          }}
           className="h-8 w-8 flex items-center justify-center rounded-lg bg-background/80 backdrop-blur border border-border text-muted-foreground hover:text-foreground"
           aria-label="Download"
         >
           <Download className="h-4 w-4" />
-        </a>
+        </button>
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -1795,13 +1830,17 @@ function ListView({
                 </td>
                 <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                   <div className="flex justify-end gap-1.5">
-                    <a
-                      href={vaultUrl(`/api/files/${f.id}/stream?dl=1`)}
+                    <button
+                      onClick={() =>
+                        downloadFileById(f.id).catch((err) =>
+                          sonnerToast.error(err instanceof Error ? err.message : "Download failed"),
+                        )
+                      }
                       className="h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                       aria-label="Download"
                     >
                       <Download className="h-4 w-4" />
-                    </a>
+                    </button>
                     <button
                       onClick={() => onMoveFile(f.id)}
                       className="h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
