@@ -43,6 +43,7 @@ import { NewFolderDialog } from "@/components/new-folder-dialog";
 import { FolderPicker } from "@/components/folder-picker";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { vaultFetch, vaultUrl, downloadFileById } from "@/lib/vault-client";
+import { toast as sonnerToast } from "sonner";
 
 import {
   DropdownMenu,
@@ -1625,7 +1626,7 @@ function GridCard({
           onClick={(e) => {
             e.stopPropagation();
             downloadFileById(file.id).catch((err) =>
-              toast.error(err instanceof Error ? err.message : "Download failed"),
+              sonnerToast.error(err instanceof Error ? err.message : "Download failed"),
             );
           }}
           className="h-8 w-8 flex items-center justify-center rounded-lg bg-background/80 backdrop-blur border border-border text-muted-foreground hover:text-foreground"
@@ -1832,7 +1833,7 @@ function ListView({
                     <button
                       onClick={() =>
                         downloadFileById(f.id).catch((err) =>
-                          toast.error(err instanceof Error ? err.message : "Download failed"),
+                          sonnerToast.error(err instanceof Error ? err.message : "Download failed"),
                         )
                       }
                       className="h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
