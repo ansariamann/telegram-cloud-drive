@@ -11,9 +11,52 @@ function chatId() {
   return c;
 }
 
-type TgResult<T> = { ok: true; result: T } | { ok: false; description: string; error_code: number };
+type TgResult<T> = {
+  ok: true;
+  result: T;
+} | {
+  ok: false;
+  description: string;
+  error_code: number;
+  parameters?: { retry_after?: number };
+};
 
-async function call<T>(method: string, form: FormData | Record<string, unknown>): Promise<T> {
+// In-memory cache for Telegram file paths (valid for at least 1 hour on Telegram servers)
+type CachedPath = { path: string; expiresAt: number };
+const filePathCache = new Map<string, CachedPath>();
+
+function getCachedFilePath(file_id: string): string | null {
+  const cached = filePathCache.get(file_id);
+  if (!cached) return null;
+  if (Date.now() > cached.expiresAt) {
+    filePathCache.delete(file_id);
+    return null;
+  }
+  return cached.path;
+}
+
+function setCachedFilePath(file_id: string, path: string): void {
+  filePathCache.set(file_id, {
+    path,
+    expiresAt: Date.now() + 45 * 60 * 1000, // 45 minutes TTL
+  });
+  if (filePathCache.size > 5000) {
+    const firstKey = filePathCache.keys().next().value;
+    if (firstKey) filePathCache.delete(firstKey);
+  }
+}
+
+export function invalidateFilePathCache(file_id: string): void {
+  filePathCache.delete(file_id);
+}
+
+const CALL_MAX_RETRIES = 4;
+
+async function call<T>(
+  method: string,
+  form: FormData | Record<string, unknown>,
+  attempt = 0,
+): Promise<T> {
   const url = `${TG_API}/bot${token()}/${method}`;
   const init: RequestInit =
     form instanceof FormData
@@ -23,12 +66,34 @@ async function call<T>(method: string, form: FormData | Record<string, unknown>)
           headers: { "content-type": "application/json" },
           body: JSON.stringify(form),
         };
-  const res = await fetch(url, init);
-  const json = (await res.json()) as TgResult<T>;
-  if (!json.ok) {
-    throw new Error(`Telegram ${method} failed: ${json.description}`);
+
+  try {
+    const res = await fetch(url, init);
+    const json = (await res.json()) as TgResult<T>;
+    if (!json.ok) {
+      // Handle rate limits (429)
+      if (json.error_code === 429 && attempt < CALL_MAX_RETRIES) {
+        const retryAfter = (json.parameters?.retry_after ?? 2) * 1000 + Math.random() * 500;
+        await new Promise((r) => setTimeout(r, retryAfter));
+        return call<T>(method, form, attempt + 1);
+      }
+      // Handle transient server errors (500, 502, 503, 504)
+      if (res.status >= 500 && attempt < CALL_MAX_RETRIES) {
+        const backoff = 1000 * Math.pow(2, attempt) + Math.random() * 500;
+        await new Promise((r) => setTimeout(r, backoff));
+        return call<T>(method, form, attempt + 1);
+      }
+      throw new Error(`Telegram ${method} failed: ${json.description}`);
+    }
+    return json.result;
+  } catch (err) {
+    if (attempt < CALL_MAX_RETRIES && !(err instanceof Error && err.message.startsWith("Telegram "))) {
+      const backoff = 1000 * Math.pow(2, attempt) + Math.random() * 500;
+      await new Promise((r) => setTimeout(r, backoff));
+      return call<T>(method, form, attempt + 1);
+    }
+    throw err;
   }
-  return json.result;
 }
 
 export type TgDocument = {
@@ -88,17 +153,57 @@ export function extractFileId(r: SendResult): string {
   return doc.file_id;
 }
 
-export async function getFilePath(file_id: string): Promise<string> {
+export async function getFilePath(file_id: string, forceFresh = false): Promise<string> {
+  if (!forceFresh) {
+    const cached = getCachedFilePath(file_id);
+    if (cached) return cached;
+  }
   const res = await call<{ file_path: string; file_size?: number }>("getFile", { file_id });
+  setCachedFilePath(file_id, res.file_path);
   return res.file_path;
 }
 
-export async function fetchTelegramFile(file_id: string): Promise<Response> {
-  const path = await getFilePath(file_id);
-  const url = `${TG_API}/file/bot${token()}/${path}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to fetch file: ${res.status}`);
-  return res;
+const FETCH_MAX_RETRIES = 3;
+
+export async function fetchTelegramFile(
+  file_id: string,
+  headersInit?: HeadersInit,
+): Promise<Response> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < FETCH_MAX_RETRIES; attempt++) {
+    try {
+      const path = await getFilePath(file_id, attempt > 0);
+      const url = `${TG_API}/file/bot${token()}/${path}`;
+      const res = await fetch(url, { headers: headersInit });
+
+      if (res.ok) {
+        return res;
+      }
+
+      // If Telegram returned 404, the path might have expired; invalidate cache
+      if (res.status === 404) {
+        invalidateFilePathCache(file_id);
+      }
+
+      // If rate-limited (429) or gateway error (502/503/504)
+      if (res.status === 429 || res.status >= 500) {
+        const delay = (attempt + 1) * 1500 + Math.random() * 500;
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+
+      throw new Error(`Failed to fetch file from Telegram: ${res.status} ${res.statusText}`);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < FETCH_MAX_RETRIES - 1) {
+        const delay = (attempt + 1) * 1200 + Math.random() * 500;
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+
+  throw lastError ?? new Error(`Failed to fetch file ${file_id} after ${FETCH_MAX_RETRIES} attempts`);
 }
 
 export async function deleteMessage(message_id: number): Promise<void> {

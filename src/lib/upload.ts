@@ -131,7 +131,16 @@ function uploadChunkXHR(
           reject(new Error("Invalid JSON response from server"));
         }
       } else {
-        reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
+        let msg = `HTTP ${xhr.status}: ${xhr.statusText}`;
+        try {
+          const parsed = JSON.parse(xhr.responseText);
+          if (parsed.error) msg = parsed.error;
+        } catch {
+          if (xhr.responseText && xhr.responseText.length < 200) {
+            msg = xhr.responseText;
+          }
+        }
+        reject(new Error(msg));
       }
     };
 
@@ -156,6 +165,8 @@ function uploadChunkXHR(
   });
 }
 
+const CHUNK_MAX_RETRIES = 4;
+
 async function uploadChunkWithRetry(
   form: FormData,
   signal: AbortSignal | undefined,
@@ -164,7 +175,7 @@ async function uploadChunkWithRetry(
   onBytesDone: () => void,
 ): Promise<UploadPart> {
   let lastError: Error | null = null;
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt < CHUNK_MAX_RETRIES; attempt++) {
     if (signal?.aborted) throw new Error("Upload cancelled");
     try {
       return await uploadChunkXHR(form, signal, onBytesSent, onBytesDone);
@@ -172,13 +183,14 @@ async function uploadChunkWithRetry(
       // Don't retry on abort
       if (err instanceof Error && err.name === "AbortError") throw err;
       lastError = err instanceof Error ? err : new Error(String(err));
-      if (attempt < MAX_RETRIES - 1) {
-        // Exponential back-off: 500ms, 1000ms, 2000ms
-        await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt)));
+      if (attempt < CHUNK_MAX_RETRIES - 1) {
+        // Exponential back-off with jitter
+        const delay = 800 * Math.pow(2, attempt) + Math.random() * 400;
+        await new Promise((r) => setTimeout(r, delay));
       }
     }
   }
-  throw lastError ?? new Error(`${partLabel} failed after ${MAX_RETRIES} attempts`);
+  throw lastError ?? new Error(`${partLabel} failed after ${CHUNK_MAX_RETRIES} attempts`);
 }
 
 /**

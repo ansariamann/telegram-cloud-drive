@@ -60,17 +60,31 @@ export const Route = createFileRoute("/api/files/download-zip")({
               zip.add(entry);
 
               for (const part of parts) {
-                try {
-                  const upstream = await fetchTelegramFile(part.file_id);
-                  if (!upstream.body) continue;
-                  const reader = upstream.body.getReader();
-                  for (;;) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    if (value) entry.push(value, false);
+                let partSuccess = false;
+                for (let attempt = 0; attempt < 3; attempt++) {
+                  try {
+                    const upstream = await fetchTelegramFile(part.file_id);
+                    if (!upstream.body) break;
+                    const reader = upstream.body.getReader();
+                    try {
+                      for (;;) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        if (value) entry.push(value, false);
+                      }
+                      partSuccess = true;
+                      break;
+                    } finally {
+                      reader.releaseLock();
+                    }
+                  } catch (err) {
+                    if (attempt < 2) {
+                      await new Promise((r) => setTimeout(r, (attempt + 1) * 1000));
+                    }
                   }
-                } catch {
-                  // Skip unreadable parts; still close the entry
+                }
+                if (!partSuccess) {
+                  console.warn(`[download-zip] Could not stream part ${part.index} of ${file.filename}`);
                 }
               }
               entry.push(new Uint8Array(0), true); // signal end of this file
@@ -81,11 +95,13 @@ export const Route = createFileRoute("/api/files/download-zip")({
         });
 
         const zipName = `vault-${fileRows.length}-files.zip`;
+        const safeZipName = zipName.replace(/["\\]/g, "_");
         return new Response(stream, {
           headers: {
             "content-type": "application/zip",
-            "content-disposition": `attachment; filename="${encodeURIComponent(zipName)}"`,
+            "content-disposition": `attachment; filename="${safeZipName}"; filename*=UTF-8''${encodeURIComponent(zipName)}`,
             "transfer-encoding": "chunked",
+            "x-content-type-options": "nosniff",
           },
         });
       },

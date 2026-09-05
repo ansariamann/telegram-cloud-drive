@@ -15,9 +15,11 @@ export const Route = createFileRoute("/api/files/$id/stream")({
         const file = await getFile(params.id);
         if (!file) return new Response("not found", { status: 404 });
 
-        const disposition = url.searchParams.get("dl")
-          ? `attachment; filename="${encodeURIComponent(file.filename)}"`
-          : `inline; filename="${encodeURIComponent(file.filename)}"`;
+        // Safe RFC 6266 / RFC 5987 Content-Disposition
+        const safeAscii = file.filename.replace(/["\\]/g, "_").replace(/[^\x20-\x7E]/g, "_");
+        const encoded = encodeURIComponent(file.filename);
+        const dispositionType = url.searchParams.get("dl") ? "attachment" : "inline";
+        const disposition = `${dispositionType}; filename="${safeAscii}"; filename*=UTF-8''${encoded}`;
 
         const totalSize = file.size_bytes;
         const rangeHeader = request.headers.get("range");
@@ -51,16 +53,22 @@ export const Route = createFileRoute("/api/files/$id/stream")({
 
         // Fast-path: Single part and not a Range request
         if (!isRange && file.parts.length === 1) {
-          const upstream = await fetchTelegramFile(file.parts[0].file_id);
-          return new Response(upstream.body, {
-            headers: {
-              "content-type": file.mime,
-              "content-length": String(totalSize),
-              "content-disposition": disposition,
-              "cache-control": "private, max-age=600",
-              "accept-ranges": "bytes",
-            },
-          });
+          try {
+            const upstream = await fetchTelegramFile(file.parts[0].file_id);
+            return new Response(upstream.body, {
+              headers: {
+                "content-type": file.mime || "application/octet-stream",
+                "content-length": String(totalSize),
+                "content-disposition": disposition,
+                "cache-control": "private, no-transform, max-age=600",
+                "accept-ranges": "bytes",
+                "x-content-type-options": "nosniff",
+              },
+            });
+          } catch (err) {
+            console.error(`[files.stream] Fast-path single-part download failed for ${file.filename}:`, err);
+            // Fall through to streaming pipeline if fast-path fails
+          }
         }
 
         const parts = [...file.parts].sort((a, b) => a.index - b.index);
@@ -74,10 +82,16 @@ export const Route = createFileRoute("/api/files/$id/stream")({
           return { ...p, partStart, partEnd };
         });
 
+        // Filter parts that overlap with the requested byte range
+        const overlappingParts = partsWithBoundaries.filter(
+          (p) => !(p.partEnd <= start || p.partStart > end),
+        );
+
         const headers: Record<string, string> = {
-          "content-type": file.mime,
+          "content-type": file.mime || "application/octet-stream",
           "content-disposition": disposition,
           "accept-ranges": "bytes",
+          "x-content-type-options": "nosniff",
         };
 
         if (isRange) {
@@ -85,18 +99,29 @@ export const Route = createFileRoute("/api/files/$id/stream")({
           headers["content-range"] = `bytes ${start}-${end}/${totalSize}`;
         } else {
           headers["content-length"] = String(totalSize);
-          headers["cache-control"] = "private, max-age=600";
+          headers["cache-control"] = "private, no-transform, max-age=600";
         }
 
         const stream = new ReadableStream<Uint8Array>({
           async start(controller) {
             try {
-              for (const p of partsWithBoundaries) {
-                // If this part does not overlap with the requested byte range, skip it
-                if (p.partEnd <= start || p.partStart > end) {
-                  continue;
-                }
+              // Prefetch helper to keep pipeline filled without stalling between chunks
+              let nextPrefetch: Promise<Response> | null = null;
 
+              const fetchPart = async (fileId: string): Promise<Response> => {
+                for (let attempt = 0; attempt < 3; attempt++) {
+                  try {
+                    return await fetchTelegramFile(fileId);
+                  } catch (err) {
+                    if (attempt === 2) throw err;
+                    await new Promise((r) => setTimeout(r, (attempt + 1) * 1000));
+                  }
+                }
+                throw new Error(`Failed to fetch part ${fileId}`);
+              };
+
+              for (let i = 0; i < overlappingParts.length; i++) {
+                const p = overlappingParts[i];
                 const overlapStart = Math.max(p.partStart, start);
                 const overlapEnd = Math.min(p.partEnd - 1, end);
                 const skipBytes = overlapStart - p.partStart;
@@ -104,7 +129,29 @@ export const Route = createFileRoute("/api/files/$id/stream")({
 
                 if (takeBytes <= 0) continue;
 
-                const upstream = await fetchTelegramFile(p.file_id);
+                // Start prefetching next part in parallel while streaming current part
+                const nextPart = overlappingParts[i + 1];
+                if (nextPart && !nextPrefetch) {
+                  nextPrefetch = fetchPart(nextPart.file_id).catch(() => null as unknown as Response);
+                }
+
+                // Get current part response (either prefetched or freshly fetched)
+                let upstream: Response;
+                if (nextPrefetch) {
+                  upstream = await nextPrefetch;
+                  nextPrefetch = null;
+                  if (!upstream || !upstream.ok) {
+                    upstream = await fetchPart(p.file_id);
+                  }
+                } else {
+                  upstream = await fetchPart(p.file_id);
+                }
+
+                // Kick off prefetch for subsequent part right away
+                if (nextPart) {
+                  nextPrefetch = fetchPart(nextPart.file_id).catch(() => null as unknown as Response);
+                }
+
                 if (!upstream.body) continue;
                 const reader = upstream.body.getReader();
 
@@ -120,7 +167,7 @@ export const Route = createFileRoute("/api/files/$id/stream")({
                     let chunk = value;
                     const chunkLength = chunk.length;
 
-                    // Handle skipping initial bytes
+                    // Handle skipping initial bytes (for Range offset)
                     if (bytesSkipped < skipBytes) {
                       const neededToSkip = skipBytes - bytesSkipped;
                       if (chunkLength <= neededToSkip) {
@@ -148,7 +195,6 @@ export const Route = createFileRoute("/api/files/$id/stream")({
                   }
                 } finally {
                   reader.releaseLock();
-                  // Cancel upstream stream connection to free Telegram Bot API network resources
                   try {
                     await upstream.body.cancel();
                   } catch {
@@ -158,6 +204,7 @@ export const Route = createFileRoute("/api/files/$id/stream")({
               }
               controller.close();
             } catch (err) {
+              console.error(`[files.stream] Stream error for file ${params.id}:`, err);
               controller.error(err);
             }
           },

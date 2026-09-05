@@ -521,10 +521,18 @@ export function FileManager() {
       // Sort files by creation order ascending (oldest first, newest last)
       // so oldest files are uploaded first and newest file is on top when completed
       const sortedFiles = [...files].sort((a, b) => a.lastModified - b.lastModified);
-      const tasks = sortedFiles.map((file) => async () => {
-        const controller = new AbortController();
-        const uploadId = generateId();
-        setUploads((u) => [...u, { id: uploadId, file, progress: null, controller }]);
+      const items = sortedFiles.map((file) => ({
+        id: generateId(),
+        file,
+        progress: null,
+        controller: new AbortController(),
+      }));
+
+      // Register all files in state immediately so user sees complete bulk queue
+      setUploads((prev) => [...prev, ...items]);
+
+      const tasks = items.map((item) => async () => {
+        const { id: uploadId, file, controller } = item;
 
         for (let round = 0; round < AUTO_RETRY_ROUNDS; round++) {
           try {
@@ -561,7 +569,7 @@ export function FileManager() {
             setUploads((u) =>
               u.map((x) => (x.id === uploadId ? { ...x, error: message, retrying: round + 1 } : x)),
             );
-            await new Promise((r) => setTimeout(r, 2000 * (round + 1)));
+            await new Promise((r) => setTimeout(r, 1500 * (round + 1)));
             if (controller.signal.aborted) {
               setUploads((u) => u.filter((x) => x.id !== uploadId));
               return;
@@ -591,6 +599,16 @@ export function FileManager() {
     },
     [startUpload],
   );
+
+  const retryAllFailed = useCallback(() => {
+    setUploads((prev) => {
+      const failed = prev.filter((u) => !!u.error);
+      if (failed.length === 0) return prev;
+      const failedFiles = failed.map((u) => u.file);
+      setTimeout(() => startUpload(failedFiles), 50);
+      return prev.filter((u) => !u.error);
+    });
+  }, [startUpload]);
 
   // drag & drop overlay
   const [dragActive, setDragActive] = useState(false);
@@ -636,6 +654,7 @@ export function FileManager() {
 
   // Date-grouped files for gallery view
   const dateGroups = useMemo(() => groupFilesByDate(files), [files]);
+  const failedUploads = useMemo(() => uploads.filter((u) => !!u.error), [uploads]);
 
   const canGoBack = breadcrumbs.length > 0 || currentFolderId !== null;
 
@@ -1161,13 +1180,26 @@ export function FileManager() {
                 {uploads.filter((u) => !u.done && !u.error).length} active
               </span>
             </div>
-            <button
-              onClick={() => setUploads((u) => u.filter((x) => !x.done && !x.error))}
-              className="text-xs text-muted-foreground hover:text-foreground font-medium transition-colors"
-              aria-label="Clear finished uploads"
-            >
-              Clear Completed
-            </button>
+            <div className="flex items-center gap-1.5">
+              {failedUploads.length > 0 && (
+                <button
+                  onClick={retryAllFailed}
+                  className="text-xs text-amber-500 hover:text-amber-400 font-medium flex items-center gap-1 transition-colors px-2 py-0.5 rounded-md hover:bg-amber-500/10 border border-amber-500/20"
+                  aria-label="Retry all failed uploads"
+                  title="Retry all failed uploads in bulk"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  <span>Retry Failed ({failedUploads.length})</span>
+                </button>
+              )}
+              <button
+                onClick={() => setUploads((u) => u.filter((x) => !x.done && !x.error))}
+                className="text-xs text-muted-foreground hover:text-foreground font-medium transition-colors"
+                aria-label="Clear finished uploads"
+              >
+                Clear Completed
+              </button>
+            </div>
           </div>
           <ul className="max-h-80 overflow-y-auto divide-y divide-border/40">
             {uploads.map((u) => {
@@ -1231,7 +1263,7 @@ export function FileManager() {
                           {u.error ? (
                             <span className="text-destructive flex items-center gap-1">
                               <AlertCircle className="h-3 w-3 shrink-0" />
-                              <span>{hasRecoverableUpload(u.file) ? 'Connection failed (Recoverable)' : 'Upload failed'}</span>
+                              <span title={u.error}>{hasRecoverableUpload(u.file) ? 'Connection failed (Recoverable)' : u.error.length > 28 ? `${u.error.slice(0, 28)}...` : u.error}</span>
                             </span>
                           ) : u.done ? (
                             <span className="text-emerald-500 flex items-center gap-1">
@@ -1254,7 +1286,9 @@ export function FileManager() {
                               )}
                               {phase === 'uploading' && (
                                 <>
-                                  {u.progress && u.progress.totalParts > 1 ? (
+                                  {!u.progress ? (
+                                    <span className="text-muted-foreground/80">Queued in batch...</span>
+                                  ) : u.progress.totalParts > 1 ? (
                                     <span>Part {u.progress.partIndex} of {u.progress.totalParts}</span>
                                   ) : (
                                     <span>Uploading...</span>
@@ -1268,7 +1302,7 @@ export function FileManager() {
                         <div className="flex items-center gap-1">
                           {u.retrying ? (
                             <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded shrink-0">
-                              Retrying {u.retrying}/{AUTO_RETRY_ROUNDS - 1}
+                              Retrying {u.retrying}/{AUTO_RETRY_ROUNDS}
                             </span>
                           ) : u.error ? (
                             <>
