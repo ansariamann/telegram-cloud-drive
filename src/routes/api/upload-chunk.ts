@@ -9,13 +9,18 @@ export const Route = createFileRoute("/api/upload-chunk")({
         requireUnlocked();
         try {
           const form = await request.formData();
-          const blob = form.get("blob");
+          const blob = form.get("blob") ?? form.get("file");
           const filename = String(form.get("filename") ?? "file");
           const mime = String(form.get("mime") ?? "application/octet-stream");
           const index = Number(form.get("index") ?? 0);
           const totalParts = Number(form.get("totalParts") ?? 1);
-          if (!(blob instanceof Blob)) return new Response("missing blob", { status: 400 });
-          const bytes = await blob.arrayBuffer();
+          if (!blob || typeof (blob as Blob).arrayBuffer !== "function") {
+            return new Response(JSON.stringify({ error: "missing or invalid blob" }), {
+              status: 400,
+              headers: { "content-type": "application/json" },
+            });
+          }
+          const bytes = await (blob as Blob).arrayBuffer();
           const forceDocument = totalParts > 1;
           const partName = totalParts > 1 ? `${filename}.part${String(index).padStart(4, "0")}` : filename;
           const caption = totalParts > 1 ? `${filename} (part ${index + 1}/${totalParts})` : filename;

@@ -133,7 +133,8 @@ export async function sendFile(opts: {
   const fd = new FormData();
   fd.set("chat_id", chatId());
   if (opts.caption) fd.set("caption", opts.caption);
-  fd.set(fieldName, new Blob([opts.bytes], { type: opts.mime }), opts.filename);
+  const fileBlob = new Blob([opts.bytes], { type: opts.mime || "application/octet-stream" });
+  fd.set(fieldName, fileBlob, opts.filename);
   return call<SendResult>(method, fd);
 }
 
