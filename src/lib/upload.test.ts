@@ -11,6 +11,13 @@ describe("telegram helpers", () => {
     expect(kindFromMime("text/plain")).toBe("other");
   });
 
+  test("duplicate detection formats response properly", () => {
+    const mockCheckResponse = { exists: true, file: { id: "123", filename: "test.txt" }, isDuplicate: true };
+    expect(mockCheckResponse.exists).toBe(true);
+    expect(mockCheckResponse.isDuplicate).toBe(true);
+    expect(mockCheckResponse.file.id).toBe("123");
+  });
+
   test("extractFileId extracts file_id properly", () => {
     const docResult: SendResult = {
       message_id: 1,

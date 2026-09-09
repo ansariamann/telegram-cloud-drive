@@ -240,6 +240,36 @@ async function uploadFileOnce(
   const parts: UploadPart[] = [];
   let firstThumb: string | null = null;
 
+  // Check if file already exists in database before chunking/uploading
+  try {
+    const checkRes = await fetch("/api/upload-check", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        filename: file.name,
+        size: file.size,
+        folder_id: folderId ?? null,
+      }),
+      signal,
+    });
+    if (checkRes.ok) {
+      const checkJson = (await checkRes.json()) as { exists: boolean; file?: { id: string; filename: string }; isDuplicate?: boolean };
+      if (checkJson.exists && checkJson.file) {
+        onProgress({
+          loaded: file.size,
+          total: file.size,
+          partIndex: totalParts,
+          totalParts,
+          phase: 'finalizing',
+        });
+        return { ...checkJson.file, isDuplicate: true } as { id: string; filename: string; isDuplicate?: boolean };
+      }
+    }
+  } catch {
+    // Non-critical check — fallback to normal upload
+  }
+
   // Check if we have cached finalize data (all chunks uploaded, finalize failed previously)
   const cachedFinalize = getCachedFinalizeData(file);
   if (cachedFinalize) {

@@ -32,8 +32,25 @@ export const Route = createFileRoute("/api/upload-finalize")({
               .contains("parts", JSON.stringify([{ message_id: firstMessageId }]))
               .maybeSingle();
             if (existing) {
-              return Response.json({ file: existing });
+              return Response.json({ file: existing, isDuplicate: true });
             }
+          }
+
+          let dupQuery = supabaseAdmin
+            .from("files")
+            .select("*")
+            .eq("filename", body.filename)
+            .eq("size_bytes", body.size);
+
+          if (body.folder_id === null || body.folder_id === undefined) {
+            dupQuery = dupQuery.is("folder_id", null);
+          } else {
+            dupQuery = dupQuery.eq("folder_id", body.folder_id);
+          }
+
+          const { data: existingByName } = await dupQuery.maybeSingle();
+          if (existingByName) {
+            return Response.json({ file: existingByName, isDuplicate: true });
           }
 
           const row = await insertFile({

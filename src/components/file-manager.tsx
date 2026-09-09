@@ -536,7 +536,7 @@ export function FileManager() {
 
         for (let round = 0; round < AUTO_RETRY_ROUNDS; round++) {
           try {
-            await uploadFile(
+            const res = await uploadFile(
               file,
               (p) => {
                 setUploads((u) => u.map((x) => (x.id === uploadId ? { ...x, progress: p } : x)));
@@ -547,7 +547,11 @@ export function FileManager() {
             setUploads((u) =>
               u.map((x) => (x.id === uploadId ? { ...x, done: true, error: undefined, retrying: undefined } : x)),
             );
-            toast.success(`Uploaded ${file.name}`);
+            if ((res as { isDuplicate?: boolean }).isDuplicate) {
+              toast.info(`${file.name} already exists (duplicate skipped)`);
+            } else {
+              toast.success(`Uploaded ${file.name}`);
+            }
             qc.invalidateQueries({ queryKey: ["files"] });
             setTimeout(() => setUploads((u) => u.filter((x) => x.id !== uploadId)), 2500);
             return;
