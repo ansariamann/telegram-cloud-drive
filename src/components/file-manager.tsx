@@ -517,10 +517,39 @@ export function FileManager() {
 
   // Concurrent upload pool
   const startUpload = useCallback(
-    async (files: File[]) => {
+    async (filesToUpload: File[]) => {
+      // Check client-side for duplicate files in current folder
+      const currentFiles = filesQuery.data ?? [];
+      const duplicates: File[] = [];
+      const nonDuplicates: File[] = [];
+
+      for (const file of filesToUpload) {
+        const isDup = currentFiles.some(
+          (existing) =>
+            existing.filename === file.name &&
+            Number(existing.size_bytes) === file.size &&
+            (existing.folder_id ?? null) === (currentFolderId ?? null)
+        );
+        if (isDup) {
+          duplicates.push(file);
+        } else {
+          nonDuplicates.push(file);
+        }
+      }
+
+      if (duplicates.length > 0) {
+        if (duplicates.length === 1) {
+          toast.error(`"${duplicates[0].name}" already exists in this folder`);
+        } else {
+          toast.error(`${duplicates.length} duplicate files skipped`);
+        }
+      }
+
+      if (nonDuplicates.length === 0) return;
+
       // Sort files by creation order ascending (oldest first, newest last)
       // so oldest files are uploaded first and newest file is on top when completed
-      const sortedFiles = [...files].sort((a, b) => a.lastModified - b.lastModified);
+      const sortedFiles = [...nonDuplicates].sort((a, b) => a.lastModified - b.lastModified);
       const items = sortedFiles.map((file) => ({
         id: generateId(),
         file,
@@ -552,13 +581,13 @@ export function FileManager() {
             setTimeout(() => setUploads((u) => u.filter((x) => x.id !== uploadId)), 2500);
             return;
           } catch (err) {
+            const isDuplicate = err instanceof Error && (err.name === "DuplicateFileError" || err.message.includes("already exists"));
             const message = err instanceof Error ? err.message : "Upload failed";
             if (message === "Upload cancelled" || controller.signal.aborted) {
               setUploads((u) => u.filter((x) => x.id !== uploadId));
               return;
             }
-            const isLast = round === AUTO_RETRY_ROUNDS - 1;
-            if (isLast) {
+            if (isDuplicate || round === AUTO_RETRY_ROUNDS - 1) {
               setUploads((u) =>
                 u.map((x) => (x.id === uploadId ? { ...x, error: message, retrying: undefined } : x)),
               );
@@ -581,7 +610,7 @@ export function FileManager() {
 
       await runPool(tasks, UPLOAD_CONCURRENCY);
     },
-    [qc, currentFolderId],
+    [qc, currentFolderId, filesQuery.data, toast],
   );
 
   const cancelUpload = useCallback((uploadId: string) => {

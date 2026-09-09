@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { kindFromMime, extractFileId, extractThumbId, type SendResult } from "./telegram.server";
+import { DuplicateFileError } from "./upload";
 
 describe("telegram helpers", () => {
   test("kindFromMime categorizes mime types correctly", () => {
@@ -30,5 +31,15 @@ describe("telegram helpers", () => {
     };
     expect(extractFileId(photoResult)).toBe("photo_large");
     expect(extractThumbId(photoResult)).toBe("photo_small");
+  });
+});
+
+describe("upload duplicate error handler", () => {
+  test("DuplicateFileError initializes correctly with message and name", () => {
+    const err = new DuplicateFileError('File "test.pdf" already exists');
+    expect(err.name).toBe("DuplicateFileError");
+    expect(err.message).toBe('File "test.pdf" already exists');
+    expect(err instanceof Error).toBe(true);
+    expect(err instanceof DuplicateFileError).toBe(true);
   });
 });
