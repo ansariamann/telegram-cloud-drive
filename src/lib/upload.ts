@@ -20,6 +20,13 @@ export type UploadProgress = {
   phase: UploadPhase;
 };
 
+export class DuplicateFileError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DuplicateFileError";
+  }
+}
+
 // ---------- sessionStorage chunk cache ----------
 // Key: file identity (name + size + lastModified) + chunk index
 // Value: serialised UploadPart
@@ -212,13 +219,29 @@ async function finalizeWithRetry(
         signal,
       });
       if (!fin.ok) {
-        const errBody = await fin.text().catch(() => "");
-        throw new Error(`Finalize failed: ${fin.status}${errBody ? ` — ${errBody}` : ""}`);
+        const errText = await fin.text().catch(() => "");
+        let isDuplicate = fin.status === 409;
+        let msg = `Finalize failed: ${fin.status}${errText ? ` — ${errText}` : ""}`;
+        try {
+          const parsed = JSON.parse(errText);
+          if (parsed.error === "DUPLICATE_FILE") {
+            isDuplicate = true;
+            msg = parsed.message || `File "${data.filename}" already exists in this folder`;
+          }
+        } catch {
+          // non-JSON
+        }
+        if (isDuplicate) {
+          throw new DuplicateFileError(msg);
+        }
+        throw new Error(msg);
       }
       const j = (await fin.json()) as { file: { id: string; filename: string } };
       return j.file;
     } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") throw err;
+      if (err instanceof Error && (err.name === "AbortError" || err instanceof DuplicateFileError)) {
+        throw err;
+      }
       lastError = err instanceof Error ? err : new Error(String(err));
       if (attempt < FINALIZE_MAX_RETRIES - 1) {
         await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt)));
@@ -392,7 +415,10 @@ export async function uploadFile(
     try {
       return await uploadFileOnce(file, onProgress, folderId, signal);
     } catch (err) {
-      if (err instanceof Error && (err.name === "AbortError" || err.message === "Upload cancelled")) {
+      if (
+        err instanceof Error &&
+        (err.name === "AbortError" || err.message === "Upload cancelled" || err instanceof DuplicateFileError)
+      ) {
         throw err;
       }
       lastError = err instanceof Error ? err : new Error(String(err));

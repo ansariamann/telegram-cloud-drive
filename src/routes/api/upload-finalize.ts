@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { requireUnlocked } from "@/lib/gate.server";
-import { insertFile } from "@/lib/files-db.server";
+import { insertFile, findDuplicateFile } from "@/lib/files-db.server";
 import { kindFromMime } from "@/lib/telegram.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
@@ -17,6 +17,7 @@ export const Route = createFileRoute("/api/upload-finalize")({
             parts: Array<{ index: number; file_id: string; message_id: number; size: number }>;
             thumb_file_id?: string | null;
             folder_id?: string | null;
+            allow_duplicate?: boolean;
           };
           const parts = [...body.parts].sort((a, b) => a.index - b.index);
 
@@ -33,6 +34,25 @@ export const Route = createFileRoute("/api/upload-finalize")({
               .maybeSingle();
             if (existing) {
               return Response.json({ file: existing });
+            }
+          }
+
+          // --- Duplicate check ---
+          const folderId = body.folder_id ?? null;
+          if (!body.allow_duplicate) {
+            const duplicate = await findDuplicateFile(body.filename, body.size, folderId);
+            if (duplicate) {
+              return new Response(
+                JSON.stringify({
+                  error: "DUPLICATE_FILE",
+                  message: `A file named "${body.filename}" (${body.size} bytes) already exists in this folder`,
+                  existingFile: duplicate,
+                }),
+                {
+                  status: 409,
+                  headers: { "content-type": "application/json" },
+                }
+              );
             }
           }
 

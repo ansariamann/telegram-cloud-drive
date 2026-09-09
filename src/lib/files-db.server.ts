@@ -62,6 +62,28 @@ export async function getFile(id: string): Promise<FileRow | null> {
   return (data as unknown as FileRow) ?? null;
 }
 
+export async function findDuplicateFile(
+  filename: string,
+  sizeBytes: number,
+  folderId: string | null
+): Promise<FileRow | null> {
+  let query = supabaseAdmin
+    .from("files")
+    .select("*")
+    .eq("filename", filename)
+    .eq("size_bytes", sizeBytes);
+
+  if (folderId === null) {
+    query = query.is("folder_id", null);
+  } else {
+    query = query.eq("folder_id", folderId);
+  }
+
+  const { data, error } = await query.limit(1).maybeSingle();
+  if (error) throw error;
+  return (data as unknown as FileRow) ?? null;
+}
+
 export async function insertFile(row: Omit<FileRow, "id" | "created_at" | "updated_at">): Promise<FileRow> {
   const { data, error } = await supabaseAdmin.from("files").insert(row as never).select("*").single();
   if (error) throw error;
