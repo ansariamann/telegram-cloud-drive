@@ -194,9 +194,7 @@ async function uploadChunk(
   }
 }
 
-/**
- * Finalize upload with retry + exponential backoff.
- */
+/** Finalize an upload once. The file-level queue owns retry policy. */
 async function finalizeUpload(
   data: FinalizeData,
   signal: AbortSignal | undefined,
@@ -228,8 +226,6 @@ async function finalizeUpload(
   const result = (await fin.json()) as { file: { id: string; filename: string } };
   return result.file;
 }
-
-const FILE_UPLOAD_MAX_RETRIES = 3;
 
 async function uploadFileOnce(
   file: File,

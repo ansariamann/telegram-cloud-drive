@@ -41,7 +41,6 @@ import { uploadFile, type UploadProgress, type UploadPhase, hasRecoverableUpload
 import {
   MAX_AUTOMATIC_UPLOAD_RETRIES,
   splitBatchDuplicates,
-  uploadIdentityKey,
   waitForUploadRetry,
 } from "@/lib/upload-policy";
 import { FilePreview } from "@/components/file-preview";

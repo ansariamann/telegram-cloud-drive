@@ -7,6 +7,16 @@ import { Input } from "@/components/ui/input";
 import { getAuthStatus } from "@/lib/auth-guard.server";
 
 export const Route = createFileRoute("/unlock")({
+  head: () => ({
+    meta: [
+      { title: "Unlock | Telegram File Vault" },
+      { name: "description", content: "Unlock your private Telegram File Vault." },
+      { property: "og:title", content: "Unlock | Telegram File Vault" },
+      { property: "og:description", content: "Unlock your private Telegram File Vault." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   loader: async () => {
     const { unlocked } = await getAuthStatus();
     if (unlocked) throw redirect({ to: "/", replace: true });

@@ -1,3 +1,4 @@
+// @ts-expect-error Bun provides this module when the tests run.
 import { describe, expect, test } from "bun:test";
 import { kindFromMime, extractFileId, extractThumbId, type SendResult } from "./telegram.server";
 import { DuplicateFileError } from "./upload";
