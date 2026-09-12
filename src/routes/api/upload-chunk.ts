@@ -24,7 +24,7 @@ export const Route = createFileRoute("/api/upload-chunk")({
           const forceDocument = totalParts > 1;
           const partName = totalParts > 1 ? `${filename}.part${String(index).padStart(4, "0")}` : filename;
           const caption = totalParts > 1 ? `${filename} (part ${index + 1}/${totalParts})` : filename;
-          const res = await sendFile({ filename: partName, mime, bytes, caption, forceDocument });
+          const res = await sendFile({ filename: partName, mime, bytes, caption, forceDocument, signal: request.signal });
           return Response.json({
             index,
             file_id: extractFileId(res),
@@ -33,6 +33,7 @@ export const Route = createFileRoute("/api/upload-chunk")({
             thumb_file_id: extractThumbId(res),
           });
         } catch (err) {
+          if (request.signal.aborted) return new Response(null, { status: 499 });
           const msg = err instanceof Error ? err.message : String(err);
           console.error("[upload-chunk] Error uploading chunk:", msg);
           return new Response(JSON.stringify({ error: msg }), {
