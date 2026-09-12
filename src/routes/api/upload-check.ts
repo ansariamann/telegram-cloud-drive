@@ -10,7 +10,7 @@ const bodySchema = z.object({
       filename: z.string().trim().min(1).max(255),
       size: z.number().int().nonnegative(),
     }),
-  ).min(1).max(100),
+  ).min(1).max(500),
 });
 
 export const Route = createFileRoute("/api/upload-check")({

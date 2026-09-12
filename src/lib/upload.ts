@@ -1,5 +1,6 @@
 const CHUNK_SIZE = 19 * 1024 * 1024; // 19 MB (Telegram Bot API download limit is 20 MB)
 const UPLOAD_REQUEST_TIMEOUT_MS = 120_000;
+const FINALIZE_REQUEST_TIMEOUT_MS = 30_000;
 
 export type UploadPart = {
   index: number;
@@ -200,13 +201,35 @@ async function finalizeUpload(
   signal: AbortSignal | undefined,
 ): Promise<{ id: string; filename: string }> {
   if (signal?.aborted) throw new Error("Upload cancelled");
-  const fin = await fetch("/api/upload-finalize", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify(data),
-    signal,
-  });
+  const timeoutController = new AbortController();
+  const timeout = window.setTimeout(
+    () => timeoutController.abort(new Error("Saving the upload timed out")),
+    FINALIZE_REQUEST_TIMEOUT_MS,
+  );
+  const abortFinalize = () => timeoutController.abort(signal?.reason);
+  signal?.addEventListener("abort", abortFinalize, { once: true });
+
+  let fin: Response;
+  try {
+    fin = await fetch("/api/upload-finalize", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(data),
+      signal: timeoutController.signal,
+    });
+  } catch (error) {
+    if (signal?.aborted) {
+      const cancelled = new Error("Upload cancelled");
+      cancelled.name = "AbortError";
+      throw cancelled;
+    }
+    if (timeoutController.signal.aborted) throw new Error("Saving the upload timed out. Retry to finish saving it.");
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+    signal?.removeEventListener("abort", abortFinalize);
+  }
   if (!fin.ok) {
     const errText = await fin.text().catch(() => "");
     let isDuplicate = fin.status === 409;
