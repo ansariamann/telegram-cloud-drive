@@ -2,7 +2,7 @@
 
 ## Changes
 
-- Allow exactly two attempts per file: the initial upload and one automatic retry. After that, leave the file failed with its existing manual retry control.
+- Allow exactly one attempts per file: the initial upload and one automatic retry. After that, leave the file failed with its existing manual retry control.
 - Remove nested retry loops so a failure cannot multiply into many hidden attempts across the queue, file, chunk, finalize, and Telegram layers.
 - Add finite request timeouts and cancellation-aware retry waits so a stalled Telegram request or browser upload cannot hold a queue worker indefinitely.
 - Add an authenticated duplicate-check endpoint and call it before sending any bytes to Telegram. Keep the final database duplicate check as protection against simultaneous uploads.
