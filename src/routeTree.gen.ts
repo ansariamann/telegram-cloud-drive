@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiWhoamiRouteImport } from './routes/api/whoami'
 import { Route as ApiUploadFinalizeRouteImport } from './routes/api/upload-finalize'
 import { Route as ApiUploadChunkRouteImport } from './routes/api/upload-chunk'
+import { Route as ApiUploadCheckRouteImport } from './routes/api/upload-check'
 import { Route as ApiUnlockRouteImport } from './routes/api/unlock'
 import { Route as ApiStatusRouteImport } from './routes/api/status'
 import { Route as ApiLockRouteImport } from './routes/api/lock'
@@ -55,6 +56,11 @@ const ApiUploadFinalizeRoute = ApiUploadFinalizeRouteImport.update({
 const ApiUploadChunkRoute = ApiUploadChunkRouteImport.update({
   id: '/api/upload-chunk',
   path: '/api/upload-chunk',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiUploadCheckRoute = ApiUploadCheckRouteImport.update({
+  id: '/api/upload-check',
+  path: '/api/upload-check',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiUnlockRoute = ApiUnlockRouteImport.update({
@@ -122,6 +128,7 @@ export interface FileRoutesByFullPath {
   '/api/lock': typeof ApiLockRoute
   '/api/status': typeof ApiStatusRoute
   '/api/unlock': typeof ApiUnlockRoute
+  '/api/upload-check': typeof ApiUploadCheckRoute
   '/api/upload-chunk': typeof ApiUploadChunkRoute
   '/api/upload-finalize': typeof ApiUploadFinalizeRoute
   '/api/whoami': typeof ApiWhoamiRoute
@@ -141,6 +148,7 @@ export interface FileRoutesByTo {
   '/api/lock': typeof ApiLockRoute
   '/api/status': typeof ApiStatusRoute
   '/api/unlock': typeof ApiUnlockRoute
+  '/api/upload-check': typeof ApiUploadCheckRoute
   '/api/upload-chunk': typeof ApiUploadChunkRoute
   '/api/upload-finalize': typeof ApiUploadFinalizeRoute
   '/api/whoami': typeof ApiWhoamiRoute
@@ -161,6 +169,7 @@ export interface FileRoutesById {
   '/api/lock': typeof ApiLockRoute
   '/api/status': typeof ApiStatusRoute
   '/api/unlock': typeof ApiUnlockRoute
+  '/api/upload-check': typeof ApiUploadCheckRoute
   '/api/upload-chunk': typeof ApiUploadChunkRoute
   '/api/upload-finalize': typeof ApiUploadFinalizeRoute
   '/api/whoami': typeof ApiWhoamiRoute
@@ -182,6 +191,7 @@ export interface FileRouteTypes {
     | '/api/lock'
     | '/api/status'
     | '/api/unlock'
+    | '/api/upload-check'
     | '/api/upload-chunk'
     | '/api/upload-finalize'
     | '/api/whoami'
@@ -201,6 +211,7 @@ export interface FileRouteTypes {
     | '/api/lock'
     | '/api/status'
     | '/api/unlock'
+    | '/api/upload-check'
     | '/api/upload-chunk'
     | '/api/upload-finalize'
     | '/api/whoami'
@@ -220,6 +231,7 @@ export interface FileRouteTypes {
     | '/api/lock'
     | '/api/status'
     | '/api/unlock'
+    | '/api/upload-check'
     | '/api/upload-chunk'
     | '/api/upload-finalize'
     | '/api/whoami'
@@ -240,6 +252,7 @@ export interface RootRouteChildren {
   ApiLockRoute: typeof ApiLockRoute
   ApiStatusRoute: typeof ApiStatusRoute
   ApiUnlockRoute: typeof ApiUnlockRoute
+  ApiUploadCheckRoute: typeof ApiUploadCheckRoute
   ApiUploadChunkRoute: typeof ApiUploadChunkRoute
   ApiUploadFinalizeRoute: typeof ApiUploadFinalizeRoute
   ApiWhoamiRoute: typeof ApiWhoamiRoute
@@ -287,6 +300,13 @@ declare module '@tanstack/react-router' {
       path: '/api/upload-chunk'
       fullPath: '/api/upload-chunk'
       preLoaderRoute: typeof ApiUploadChunkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/upload-check': {
+      id: '/api/upload-check'
+      path: '/api/upload-check'
+      fullPath: '/api/upload-check'
+      preLoaderRoute: typeof ApiUploadCheckRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/unlock': {
@@ -420,6 +440,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiLockRoute: ApiLockRoute,
   ApiStatusRoute: ApiStatusRoute,
   ApiUnlockRoute: ApiUnlockRoute,
+  ApiUploadCheckRoute: ApiUploadCheckRoute,
   ApiUploadChunkRoute: ApiUploadChunkRoute,
   ApiUploadFinalizeRoute: ApiUploadFinalizeRoute,
   ApiWhoamiRoute: ApiWhoamiRoute,
