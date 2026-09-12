@@ -69,6 +69,15 @@ export const Route = createFileRoute("/api/upload-finalize")({
           return Response.json({ file: row });
         } catch (err) {
           console.error("[upload-finalize] ERROR:", err);
+          if (typeof err === "object" && err !== null && "code" in err && err.code === "23505") {
+            return new Response(
+              JSON.stringify({
+                error: "DUPLICATE_FILE",
+                message: "A matching file was saved while this upload was in progress",
+              }),
+              { status: 409, headers: { "content-type": "application/json" } },
+            );
+          }
           const message = err instanceof Error ? err.message : String(err);
           return new Response(JSON.stringify({ error: message }), {
             status: 500,

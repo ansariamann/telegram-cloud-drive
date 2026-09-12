@@ -6,6 +6,16 @@ import { setVaultSession, vaultFetch } from "@/lib/vault-client";
 import { getAuthStatus } from "@/lib/auth-guard.server";
 
 export const Route = createFileRoute("/settings")({
+  head: () => ({
+    meta: [
+      { title: "Settings | Telegram File Vault" },
+      { name: "description", content: "Manage Telegram File Vault connection and session settings." },
+      { property: "og:title", content: "Settings | Telegram File Vault" },
+      { property: "og:description", content: "Manage Telegram File Vault connection and session settings." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   // Server-side guard — same as index route
   loader: async () => {
     const { unlocked } = await getAuthStatus();

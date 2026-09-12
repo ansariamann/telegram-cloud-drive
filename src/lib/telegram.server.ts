@@ -50,11 +50,26 @@ export function invalidateFilePathCache(file_id: string): void {
   filePathCache.delete(file_id);
 }
 
-const CALL_MAX_RETRIES = 4;
+const TELEGRAM_REQUEST_TIMEOUT_MS = 120_000;
+
+async function fetchWithTimeout(url: string, init: RequestInit, externalSignal?: AbortSignal): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(new Error("Telegram request timed out")), TELEGRAM_REQUEST_TIMEOUT_MS);
+  const abort = () => controller.abort(externalSignal?.reason);
+  externalSignal?.addEventListener("abort", abort, { once: true });
+
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+    externalSignal?.removeEventListener("abort", abort);
+  }
+}
 
 async function call<T>(
   method: string,
   form: FormData | Record<string, unknown>,
+  options: { signal?: AbortSignal; maxRetries?: number } = {},
   attempt = 0,
 ): Promise<T> {
   const url = `${TG_API}/bot${token()}/${method}`;
@@ -68,29 +83,31 @@ async function call<T>(
         };
 
   try {
-    const res = await fetch(url, init);
+    const res = await fetchWithTimeout(url, init, options.signal);
     const json = (await res.json()) as TgResult<T>;
     if (!json.ok) {
       // Handle rate limits (429)
-      if (json.error_code === 429 && attempt < CALL_MAX_RETRIES) {
+      const maxRetries = options.maxRetries ?? 2;
+      if (json.error_code === 429 && attempt < maxRetries) {
         const retryAfter = (json.parameters?.retry_after ?? 2) * 1000 + Math.random() * 500;
         await new Promise((r) => setTimeout(r, retryAfter));
-        return call<T>(method, form, attempt + 1);
+        return call<T>(method, form, options, attempt + 1);
       }
       // Handle transient server errors (500, 502, 503, 504)
-      if (res.status >= 500 && attempt < CALL_MAX_RETRIES) {
+      if (res.status >= 500 && attempt < maxRetries) {
         const backoff = 1000 * Math.pow(2, attempt) + Math.random() * 500;
         await new Promise((r) => setTimeout(r, backoff));
-        return call<T>(method, form, attempt + 1);
+        return call<T>(method, form, options, attempt + 1);
       }
       throw new Error(`Telegram ${method} failed: ${json.description}`);
     }
     return json.result;
   } catch (err) {
-    if (attempt < CALL_MAX_RETRIES && !(err instanceof Error && err.message.startsWith("Telegram "))) {
+    const maxRetries = options.maxRetries ?? 2;
+    if (attempt < maxRetries && !(err instanceof Error && err.message.startsWith("Telegram "))) {
       const backoff = 1000 * Math.pow(2, attempt) + Math.random() * 500;
       await new Promise((r) => setTimeout(r, backoff));
-      return call<T>(method, form, attempt + 1);
+      return call<T>(method, form, options, attempt + 1);
     }
     throw err;
   }
@@ -126,6 +143,7 @@ export async function sendFile(opts: {
   bytes: ArrayBuffer;
   caption?: string;
   forceDocument?: boolean;
+  signal?: AbortSignal;
 }): Promise<SendResult> {
   const method = opts.forceDocument ? "sendDocument" : pickSendMethod(opts.mime);
   const fieldName =
@@ -135,7 +153,7 @@ export async function sendFile(opts: {
   if (opts.caption) fd.set("caption", opts.caption);
   const fileBlob = new Blob([opts.bytes], { type: opts.mime || "application/octet-stream" });
   fd.set(fieldName, fileBlob, opts.filename);
-  return call<SendResult>(method, fd);
+  return call<SendResult>(method, fd, { signal: opts.signal, maxRetries: 0 });
 }
 
 export function extractThumbId(r: SendResult): string | null {

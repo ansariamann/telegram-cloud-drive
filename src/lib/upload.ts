@@ -1,6 +1,6 @@
 const CHUNK_SIZE = 19 * 1024 * 1024; // 19 MB (Telegram Bot API download limit is 20 MB)
-const MAX_RETRIES = 3;
-const FINALIZE_MAX_RETRIES = 3;
+const UPLOAD_REQUEST_TIMEOUT_MS = 120_000;
+const FINALIZE_REQUEST_TIMEOUT_MS = 30_000;
 
 export type UploadPart = {
   index: number;
@@ -110,6 +110,7 @@ function uploadChunkXHR(
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/upload-chunk");
+    xhr.timeout = UPLOAD_REQUEST_TIMEOUT_MS;
 
     xhr.withCredentials = true;
 
@@ -161,6 +162,11 @@ function uploadChunkXHR(
       }
     };
 
+    xhr.ontimeout = () => {
+      signal?.removeEventListener("abort", abortHandler);
+      reject(new Error("Upload timed out. Check your connection and retry."));
+    };
+
     xhr.onabort = () => {
       signal?.removeEventListener("abort", abortHandler);
       const err = new Error("Upload cancelled");
@@ -172,86 +178,77 @@ function uploadChunkXHR(
   });
 }
 
-const CHUNK_MAX_RETRIES = 4;
-
-async function uploadChunkWithRetry(
+async function uploadChunk(
   form: FormData,
   signal: AbortSignal | undefined,
   partLabel: string,
   onBytesSent: (sent: number, total: number) => void,
   onBytesDone: () => void,
 ): Promise<UploadPart> {
-  let lastError: Error | null = null;
-  for (let attempt = 0; attempt < CHUNK_MAX_RETRIES; attempt++) {
-    if (signal?.aborted) throw new Error("Upload cancelled");
-    try {
-      return await uploadChunkXHR(form, signal, onBytesSent, onBytesDone);
-    } catch (err) {
-      // Don't retry on abort
-      if (err instanceof Error && err.name === "AbortError") throw err;
-      lastError = err instanceof Error ? err : new Error(String(err));
-      if (attempt < CHUNK_MAX_RETRIES - 1) {
-        // Exponential back-off with jitter
-        const delay = 800 * Math.pow(2, attempt) + Math.random() * 400;
-        await new Promise((r) => setTimeout(r, delay));
-      }
-    }
+  if (signal?.aborted) throw new Error("Upload cancelled");
+  try {
+    return await uploadChunkXHR(form, signal, onBytesSent, onBytesDone);
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${partLabel} failed: ${message}`);
   }
-  throw lastError ?? new Error(`${partLabel} failed after ${CHUNK_MAX_RETRIES} attempts`);
 }
 
-/**
- * Finalize upload with retry + exponential backoff.
- */
-async function finalizeWithRetry(
+/** Finalize an upload once. The file-level queue owns retry policy. */
+async function finalizeUpload(
   data: FinalizeData,
   signal: AbortSignal | undefined,
 ): Promise<{ id: string; filename: string }> {
-  let lastError: Error | null = null;
-  for (let attempt = 0; attempt < FINALIZE_MAX_RETRIES; attempt++) {
-    if (signal?.aborted) throw new Error("Upload cancelled");
-    try {
-      const fin = await fetch("/api/upload-finalize", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(data),
-        signal,
-      });
-      if (!fin.ok) {
-        const errText = await fin.text().catch(() => "");
-        let isDuplicate = fin.status === 409;
-        let msg = `Finalize failed: ${fin.status}${errText ? ` — ${errText}` : ""}`;
-        try {
-          const parsed = JSON.parse(errText);
-          if (parsed.error === "DUPLICATE_FILE") {
-            isDuplicate = true;
-            msg = parsed.message || `File "${data.filename}" already exists in this folder`;
-          }
-        } catch {
-          // non-JSON
-        }
-        if (isDuplicate) {
-          throw new DuplicateFileError(msg);
-        }
-        throw new Error(msg);
-      }
-      const j = (await fin.json()) as { file: { id: string; filename: string } };
-      return j.file;
-    } catch (err) {
-      if (err instanceof Error && (err.name === "AbortError" || err instanceof DuplicateFileError)) {
-        throw err;
-      }
-      lastError = err instanceof Error ? err : new Error(String(err));
-      if (attempt < FINALIZE_MAX_RETRIES - 1) {
-        await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt)));
-      }
-    }
-  }
-  throw lastError ?? new Error(`Finalize failed after ${FINALIZE_MAX_RETRIES} attempts`);
-}
+  if (signal?.aborted) throw new Error("Upload cancelled");
+  const timeoutController = new AbortController();
+  const timeout = window.setTimeout(
+    () => timeoutController.abort(new Error("Saving the upload timed out")),
+    FINALIZE_REQUEST_TIMEOUT_MS,
+  );
+  const abortFinalize = () => timeoutController.abort(signal?.reason);
+  signal?.addEventListener("abort", abortFinalize, { once: true });
 
-const FILE_UPLOAD_MAX_RETRIES = 3;
+  let fin: Response;
+  try {
+    fin = await fetch("/api/upload-finalize", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(data),
+      signal: timeoutController.signal,
+    });
+  } catch (error) {
+    if (signal?.aborted) {
+      const cancelled = new Error("Upload cancelled");
+      cancelled.name = "AbortError";
+      throw cancelled;
+    }
+    if (timeoutController.signal.aborted) throw new Error("Saving the upload timed out. Retry to finish saving it.");
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+    signal?.removeEventListener("abort", abortFinalize);
+  }
+  if (!fin.ok) {
+    const errText = await fin.text().catch(() => "");
+    let isDuplicate = fin.status === 409;
+    let msg = `Finalize failed: ${fin.status}${errText ? ` — ${errText}` : ""}`;
+    try {
+      const parsed = JSON.parse(errText);
+      if (parsed.error === "DUPLICATE_FILE") {
+        isDuplicate = true;
+        msg = parsed.message || `File "${data.filename}" already exists in this folder`;
+      }
+    } catch {
+      // non-JSON
+    }
+    if (isDuplicate) throw new DuplicateFileError(msg);
+    throw new Error(msg);
+  }
+  const result = (await fin.json()) as { file: { id: string; filename: string } };
+  return result.file;
+}
 
 async function uploadFileOnce(
   file: File,
@@ -275,7 +272,7 @@ async function uploadFileOnce(
       phase: 'finalizing',
     });
     try {
-      const result = await finalizeWithRetry(
+      const result = await finalizeUpload(
         { ...cachedFinalize, folder_id: folderId ?? null },
         signal,
       );
@@ -325,7 +322,7 @@ async function uploadFileOnce(
 
     const capturedBase = baseLoaded; // capture for closure
 
-    const data = await uploadChunkWithRetry(
+    const data = await uploadChunk(
       form,
       signal,
       `Part ${i + 1}/${totalParts}`,
@@ -395,7 +392,7 @@ async function uploadFileOnce(
     phase: 'finalizing',
   });
 
-  const result = await finalizeWithRetry(finalizeData, signal);
+  const result = await finalizeUpload(finalizeData, signal);
 
   // Success — clear all caches
   clearChunkCache(file, totalParts);
@@ -409,26 +406,8 @@ export async function uploadFile(
   folderId?: string | null,
   signal?: AbortSignal,
 ): Promise<{ id: string; filename: string }> {
-  let lastError: Error | null = null;
-  for (let attempt = 0; attempt < FILE_UPLOAD_MAX_RETRIES; attempt++) {
-    if (signal?.aborted) throw new Error("Upload cancelled");
-    try {
-      return await uploadFileOnce(file, onProgress, folderId, signal);
-    } catch (err) {
-      if (
-        err instanceof Error &&
-        (err.name === "AbortError" || err.message === "Upload cancelled" || err instanceof DuplicateFileError)
-      ) {
-        throw err;
-      }
-      lastError = err instanceof Error ? err : new Error(String(err));
-      if (attempt < FILE_UPLOAD_MAX_RETRIES - 1) {
-        // Wait before retrying entire file upload flow
-        await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)));
-      }
-    }
-  }
-  throw lastError ?? new Error(`Upload failed for ${file.name}`);
+  if (signal?.aborted) throw new Error("Upload cancelled");
+  return uploadFileOnce(file, onProgress, folderId, signal);
 }
 
 /**
@@ -443,7 +422,7 @@ export async function retryFinalizeOnly(
   const cached = getCachedFinalizeData(file);
   if (!cached) return null; // No cached data — can't recover
   const totalParts = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
-  const result = await finalizeWithRetry(
+  const result = await finalizeUpload(
     { ...cached, folder_id: folderId ?? null },
     signal,
   );

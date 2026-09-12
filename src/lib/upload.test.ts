@@ -1,6 +1,8 @@
+// @ts-expect-error Bun provides this module when the tests run.
 import { describe, expect, test } from "bun:test";
 import { kindFromMime, extractFileId, extractThumbId, type SendResult } from "./telegram.server";
 import { DuplicateFileError } from "./upload";
+import { MAX_AUTOMATIC_UPLOAD_RETRIES, splitBatchDuplicates, uploadIdentityKey } from "./upload-policy";
 
 describe("telegram helpers", () => {
   test("kindFromMime categorizes mime types correctly", () => {
@@ -41,5 +43,22 @@ describe("upload duplicate error handler", () => {
     expect(err.message).toBe('File "test.pdf" already exists');
     expect(err instanceof Error).toBe(true);
     expect(err instanceof DuplicateFileError).toBe(true);
+  });
+});
+
+describe("upload policy", () => {
+  test("allows only one automatic retry", () => {
+    expect(MAX_AUTOMATIC_UPLOAD_RETRIES).toBe(1);
+  });
+
+  test("detects duplicate files in the same selected batch", () => {
+    const first = { name: "report.pdf", size: 42 };
+    const second = { name: "report.pdf", size: 42 };
+    const other = { name: "report.pdf", size: 43 };
+    const result = splitBatchDuplicates([first, second, other]);
+
+    expect(result.unique).toEqual([first, other]);
+    expect(result.duplicates).toEqual([second]);
+    expect(uploadIdentityKey(first)).not.toBe(uploadIdentityKey(other));
   });
 });

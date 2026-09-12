@@ -38,6 +38,11 @@ import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatBytes, formatDate } from "@/lib/format";
 import { uploadFile, type UploadProgress, type UploadPhase, hasRecoverableUpload } from "@/lib/upload";
+import {
+  MAX_AUTOMATIC_UPLOAD_RETRIES,
+  splitBatchDuplicates,
+  waitForUploadRetry,
+} from "@/lib/upload-policy";
 import { FilePreview } from "@/components/file-preview";
 import { NewFolderDialog } from "@/components/new-folder-dialog";
 import { FolderPicker } from "@/components/folder-picker";
@@ -121,8 +126,6 @@ function getFileKind(mime: string): string {
     return "archive";
   return "other";
 }
-
-const AUTO_RETRY_ROUNDS = 3;
 
 type Uploading = {
   id: string;
@@ -518,22 +521,31 @@ export function FileManager() {
   // Concurrent upload pool
   const startUpload = useCallback(
     async (filesToUpload: File[]) => {
-      // Check client-side for duplicate files in current folder
-      const currentFiles = filesQuery.data ?? [];
-      const duplicates: File[] = [];
-      const nonDuplicates: File[] = [];
+      const batch = splitBatchDuplicates(filesToUpload);
+      const duplicates = [...batch.duplicates];
+      const recoverable = batch.unique.filter(hasRecoverableUpload);
+      const candidates = batch.unique.filter((file) => !hasRecoverableUpload(file));
+      let nonDuplicates = recoverable;
 
-      for (const file of filesToUpload) {
-        const isDup = currentFiles.some(
-          (existing) =>
-            existing.filename === file.name &&
-            Number(existing.size_bytes) === file.size &&
-            (existing.folder_id ?? null) === (currentFolderId ?? null)
-        );
-        if (isDup) {
-          duplicates.push(file);
-        } else {
-          nonDuplicates.push(file);
+      if (candidates.length > 0) {
+        try {
+          const response = await vaultFetch("/api/upload-check", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              folder_id: currentFolderId,
+              files: candidates.map((file) => ({ filename: file.name, size: file.size })),
+            }),
+          });
+          if (!response.ok) throw new Error(`Duplicate check failed (${response.status})`);
+          const result = (await response.json()) as { duplicateIndexes: number[] };
+          const duplicateIndexes = new Set(result.duplicateIndexes);
+          duplicates.push(...candidates.filter((_, index) => duplicateIndexes.has(index)));
+          nonDuplicates = [...recoverable, ...candidates.filter((_, index) => !duplicateIndexes.has(index))];
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Could not check for duplicates";
+          toast.error(message);
+          return;
         }
       }
 
@@ -563,7 +575,7 @@ export function FileManager() {
       const tasks = items.map((item) => async () => {
         const { id: uploadId, file, controller } = item;
 
-        for (let round = 0; round < AUTO_RETRY_ROUNDS; round++) {
+        for (let attempt = 0; attempt <= MAX_AUTOMATIC_UPLOAD_RETRIES; attempt++) {
           try {
             await uploadFile(
               file,
@@ -587,19 +599,20 @@ export function FileManager() {
               setUploads((u) => u.filter((x) => x.id !== uploadId));
               return;
             }
-            if (isDuplicate || round === AUTO_RETRY_ROUNDS - 1) {
+            if (isDuplicate || attempt === MAX_AUTOMATIC_UPLOAD_RETRIES) {
               setUploads((u) =>
                 u.map((x) => (x.id === uploadId ? { ...x, error: message, retrying: undefined } : x)),
               );
               toast.error(`${file.name}: ${message}`);
               return;
             }
-            // Automatically retry after a short back-off
+            // One automatic retry. Further attempts are always user initiated.
             setUploads((u) =>
-              u.map((x) => (x.id === uploadId ? { ...x, error: message, retrying: round + 1 } : x)),
+              u.map((x) => (x.id === uploadId ? { ...x, error: message, retrying: attempt + 1 } : x)),
             );
-            await new Promise((r) => setTimeout(r, 1500 * (round + 1)));
-            if (controller.signal.aborted) {
+            try {
+              await waitForUploadRetry(1500, controller.signal);
+            } catch {
               setUploads((u) => u.filter((x) => x.id !== uploadId));
               return;
             }
@@ -610,7 +623,7 @@ export function FileManager() {
 
       await runPool(tasks, UPLOAD_CONCURRENCY);
     },
-    [qc, currentFolderId, filesQuery.data, toast],
+    [qc, currentFolderId, toast],
   );
 
   const cancelUpload = useCallback((uploadId: string) => {
@@ -1331,7 +1344,7 @@ export function FileManager() {
                         <div className="flex items-center gap-1">
                           {u.retrying ? (
                             <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded shrink-0">
-                              Retrying {u.retrying}/{AUTO_RETRY_ROUNDS}
+                              Retrying {u.retrying}/{MAX_AUTOMATIC_UPLOAD_RETRIES}
                             </span>
                           ) : u.error ? (
                             <>
