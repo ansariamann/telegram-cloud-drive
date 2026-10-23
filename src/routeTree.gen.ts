@@ -29,6 +29,7 @@ import { Route as ApiFilesIdRouteImport } from './routes/api/files.$id'
 import { Route as ApiSharesTokenUploadFinalizeRouteImport } from './routes/api/shares.$token.upload-finalize'
 import { Route as ApiSharesTokenUploadChunkRouteImport } from './routes/api/shares.$token.upload-chunk'
 import { Route as ApiSharesTokenUploadCheckRouteImport } from './routes/api/shares.$token.upload-check'
+import { Route as ApiSharesTokenDownloadZipRouteImport } from './routes/api/shares.$token.download-zip'
 import { Route as ApiSharesTokenCreateFolderRouteImport } from './routes/api/shares.$token.create-folder'
 import { Route as ApiFoldersIdShareRouteImport } from './routes/api/folders.$id.share'
 import { Route as ApiFilesIdThumbRouteImport } from './routes/api/files.$id.thumb'
@@ -140,6 +141,12 @@ const ApiSharesTokenUploadCheckRoute =
     path: '/upload-check',
     getParentRoute: () => ApiSharesTokenRoute,
   } as any)
+const ApiSharesTokenDownloadZipRoute =
+  ApiSharesTokenDownloadZipRouteImport.update({
+    id: '/download-zip',
+    path: '/download-zip',
+    getParentRoute: () => ApiSharesTokenRoute,
+  } as any)
 const ApiSharesTokenCreateFolderRoute =
   ApiSharesTokenCreateFolderRouteImport.update({
     id: '/create-folder',
@@ -202,6 +209,7 @@ export interface FileRoutesByFullPath {
   '/api/files/$id/thumb': typeof ApiFilesIdThumbRoute
   '/api/folders/$id/share': typeof ApiFoldersIdShareRoute
   '/api/shares/$token/create-folder': typeof ApiSharesTokenCreateFolderRoute
+  '/api/shares/$token/download-zip': typeof ApiSharesTokenDownloadZipRoute
   '/api/shares/$token/upload-check': typeof ApiSharesTokenUploadCheckRoute
   '/api/shares/$token/upload-chunk': typeof ApiSharesTokenUploadChunkRoute
   '/api/shares/$token/upload-finalize': typeof ApiSharesTokenUploadFinalizeRoute
@@ -231,6 +239,7 @@ export interface FileRoutesByTo {
   '/api/files/$id/thumb': typeof ApiFilesIdThumbRoute
   '/api/folders/$id/share': typeof ApiFoldersIdShareRoute
   '/api/shares/$token/create-folder': typeof ApiSharesTokenCreateFolderRoute
+  '/api/shares/$token/download-zip': typeof ApiSharesTokenDownloadZipRoute
   '/api/shares/$token/upload-check': typeof ApiSharesTokenUploadCheckRoute
   '/api/shares/$token/upload-chunk': typeof ApiSharesTokenUploadChunkRoute
   '/api/shares/$token/upload-finalize': typeof ApiSharesTokenUploadFinalizeRoute
@@ -261,6 +270,7 @@ export interface FileRoutesById {
   '/api/files/$id/thumb': typeof ApiFilesIdThumbRoute
   '/api/folders/$id/share': typeof ApiFoldersIdShareRoute
   '/api/shares/$token/create-folder': typeof ApiSharesTokenCreateFolderRoute
+  '/api/shares/$token/download-zip': typeof ApiSharesTokenDownloadZipRoute
   '/api/shares/$token/upload-check': typeof ApiSharesTokenUploadCheckRoute
   '/api/shares/$token/upload-chunk': typeof ApiSharesTokenUploadChunkRoute
   '/api/shares/$token/upload-finalize': typeof ApiSharesTokenUploadFinalizeRoute
@@ -292,6 +302,7 @@ export interface FileRouteTypes {
     | '/api/files/$id/thumb'
     | '/api/folders/$id/share'
     | '/api/shares/$token/create-folder'
+    | '/api/shares/$token/download-zip'
     | '/api/shares/$token/upload-check'
     | '/api/shares/$token/upload-chunk'
     | '/api/shares/$token/upload-finalize'
@@ -321,6 +332,7 @@ export interface FileRouteTypes {
     | '/api/files/$id/thumb'
     | '/api/folders/$id/share'
     | '/api/shares/$token/create-folder'
+    | '/api/shares/$token/download-zip'
     | '/api/shares/$token/upload-check'
     | '/api/shares/$token/upload-chunk'
     | '/api/shares/$token/upload-finalize'
@@ -350,6 +362,7 @@ export interface FileRouteTypes {
     | '/api/files/$id/thumb'
     | '/api/folders/$id/share'
     | '/api/shares/$token/create-folder'
+    | '/api/shares/$token/download-zip'
     | '/api/shares/$token/upload-check'
     | '/api/shares/$token/upload-chunk'
     | '/api/shares/$token/upload-finalize'
@@ -516,6 +529,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSharesTokenUploadCheckRouteImport
       parentRoute: typeof ApiSharesTokenRoute
     }
+    '/api/shares/$token/download-zip': {
+      id: '/api/shares/$token/download-zip'
+      path: '/download-zip'
+      fullPath: '/api/shares/$token/download-zip'
+      preLoaderRoute: typeof ApiSharesTokenDownloadZipRouteImport
+      parentRoute: typeof ApiSharesTokenRoute
+    }
     '/api/shares/$token/create-folder': {
       id: '/api/shares/$token/create-folder'
       path: '/create-folder'
@@ -624,6 +644,7 @@ const ApiFoldersRouteWithChildren = ApiFoldersRoute._addFileChildren(
 
 interface ApiSharesTokenRouteChildren {
   ApiSharesTokenCreateFolderRoute: typeof ApiSharesTokenCreateFolderRoute
+  ApiSharesTokenDownloadZipRoute: typeof ApiSharesTokenDownloadZipRoute
   ApiSharesTokenUploadCheckRoute: typeof ApiSharesTokenUploadCheckRoute
   ApiSharesTokenUploadChunkRoute: typeof ApiSharesTokenUploadChunkRoute
   ApiSharesTokenUploadFinalizeRoute: typeof ApiSharesTokenUploadFinalizeRoute
@@ -633,6 +654,7 @@ interface ApiSharesTokenRouteChildren {
 
 const ApiSharesTokenRouteChildren: ApiSharesTokenRouteChildren = {
   ApiSharesTokenCreateFolderRoute: ApiSharesTokenCreateFolderRoute,
+  ApiSharesTokenDownloadZipRoute: ApiSharesTokenDownloadZipRoute,
   ApiSharesTokenUploadCheckRoute: ApiSharesTokenUploadCheckRoute,
   ApiSharesTokenUploadChunkRoute: ApiSharesTokenUploadChunkRoute,
   ApiSharesTokenUploadFinalizeRoute: ApiSharesTokenUploadFinalizeRoute,

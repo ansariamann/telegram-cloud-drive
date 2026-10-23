@@ -96,6 +96,53 @@ export type Database = {
           },
         ]
       }
+      folder_shares: {
+        Row: {
+          id: string
+          folder_id: string
+          token: string
+          label: string | null
+          allow_upload: boolean
+          allow_download: boolean
+          expires_at: string | null
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          folder_id: string
+          token: string
+          label?: string | null
+          allow_upload?: boolean
+          allow_download?: boolean
+          expires_at?: string | null
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          folder_id?: string
+          token?: string
+          label?: string | null
+          allow_upload?: boolean
+          allow_download?: boolean
+          expires_at?: string | null
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "folder_shares_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

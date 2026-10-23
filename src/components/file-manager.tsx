@@ -1159,6 +1159,7 @@ export function FileManager() {
                         renameFolderMutation.mutate({ id, name: folderNewName.trim() });
                     }}
                     onFolderRenameCancel={() => setRenamingFolderId(null)}
+                    onShareFolder={(id, name) => setSharingFolder({ id, name })}
                   />
                 )}
               </>
@@ -1797,6 +1798,7 @@ function ListView({
   onFolderNewNameChange,
   onFolderRenameSubmit,
   onFolderRenameCancel,
+  onShareFolder,
 }: {
   folders: FolderRow[];
   files: FileRow[];
@@ -1817,6 +1819,7 @@ function ListView({
   onFolderNewNameChange: (name: string) => void;
   onFolderRenameSubmit: (id: string) => void;
   onFolderRenameCancel: () => void;
+  onShareFolder?: (id: string, name: string) => void;
 }) {
   return (
     <div className="rounded-2xl border border-border overflow-hidden">
@@ -1883,7 +1886,7 @@ function ListView({
               <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                 <div className="flex justify-end gap-1.5">
                   <button
-                    onClick={() => handleFolderDownload(f.id, f.name)}
+                    onClick={() => onDownloadFolder(f.id, f.name)}
                     disabled={folderDownloading === f.id}
                     className="h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50 transition-colors"
                     aria-label="Download folder as ZIP"
@@ -1896,7 +1899,7 @@ function ListView({
                     )}
                   </button>
                   <button
-                    onClick={() => setSharingFolder({ id: f.id, name: f.name })}
+                    onClick={() => onShareFolder?.(f.id, f.name)}
                     className="h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                     aria-label="Share folder"
                     title="Share folder"

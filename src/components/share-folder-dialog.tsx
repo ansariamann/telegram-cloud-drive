@@ -163,7 +163,7 @@ export function ShareFolderDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-5 pt-2">
+        <div className="space-y-5 pt-2 overflow-y-auto max-h-[60vh] pr-0.5">
           {/* Loading state */}
           {loading ? (
             <div className="flex items-center justify-center py-8">
