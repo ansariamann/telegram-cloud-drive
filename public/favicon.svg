@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <!-- Background Gradient (Telegram Sky Blue to Deep Blue) -->
+    <linearGradient id="tg-grad" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="50%" stop-color="#0EA5E9" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </linearGradient>
+
+    <!-- Cloud Subtle Gradient Fill -->
+    <linearGradient id="cloud-fill" x1="32" y1="18" x2="32" y2="45" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#F0F9FF" />
+    </linearGradient>
+
+    <!-- Soft Drop Shadow for Cloud -->
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="2.5" stdDeviation="2" flood-color="#0369A1" flood-opacity="0.35" />
+    </filter>
+  </defs>
+
+  <!-- Squircle Base with smooth curvature -->
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#tg-grad)" />
+
+  <!-- Subtle Top Rim Light -->
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="none" stroke="rgba(255, 255, 255, 0.3)" stroke-width="1.5" />
+
+  <!-- Centered Bold Cloud Silhouette with Shadow -->
+  <g transform="translate(10, 10) scale(1.83)" filter="url(#shadow)">
+    <path
+      d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"
+      fill="url(#cloud-fill)"
+    />
+  </g>
+</svg>

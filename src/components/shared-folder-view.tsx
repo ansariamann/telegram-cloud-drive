@@ -136,9 +136,11 @@ export function SharedFolderView({ token }: { token: string }) {
     fetchFolder(currentFolderId);
   }, [fetchFolder, currentFolderId]);
 
-  // Navigate folder helper
+  // Navigate folder helper — clear stale files/folders immediately to avoid
+  // the previous folder's content flashing while the new folder loads.
   const navigateToFolder = (folderId: string | null) => {
     setSearchQuery("");
+    setData((prev) => (prev ? { ...prev, folders: [], files: [] } : prev));
     setCurrentFolderId(folderId);
   };
 
@@ -520,7 +522,12 @@ export function SharedFolderView({ token }: { token: string }) {
 
       {/* Main Content Area */}
       <main className="flex-1 mx-auto max-w-7xl w-full px-4 sm:px-6 py-6 pb-24">
-        {filteredFolders.length === 0 && filteredFiles.length === 0 ? (
+        {loading && data ? (
+          <div className="flex flex-col items-center justify-center py-24 text-muted-foreground gap-3">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <span className="text-sm">Loading folder…</span>
+          </div>
+        ) : filteredFolders.length === 0 && filteredFiles.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="h-16 w-16 rounded-2xl bg-muted/60 flex items-center justify-center text-muted-foreground mb-4">
               <Folder className="h-8 w-8" />

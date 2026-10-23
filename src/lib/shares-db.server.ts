@@ -19,7 +19,7 @@ function generateToken(): string {
   return randomBytes(16).toString("hex");
 }
 
-/** Get all active shares for a folder */
+/** Get all active shares for a folder (filters out expired ones) */
 export async function listFolderShares(folderId: string): Promise<FolderShareRow[]> {
   const { data, error } = await supabaseAdmin
     .from("folder_shares")
@@ -28,7 +28,17 @@ export async function listFolderShares(folderId: string): Promise<FolderShareRow
     .eq("is_active", true)
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []) as unknown as FolderShareRow[];
+  const now = new Date();
+  return ((data ?? []) as unknown as FolderShareRow[]).filter((s) => {
+    if (!s.expires_at) return true;
+    return new Date(s.expires_at) > now;
+  });
+}
+
+/** Get the primary active share for a folder if one exists */
+export async function getActiveFolderShare(folderId: string): Promise<FolderShareRow | null> {
+  const shares = await listFolderShares(folderId);
+  return shares[0] ?? null;
 }
 
 /** Create a new share link for a folder */
@@ -51,6 +61,34 @@ export async function createFolderShare(opts: {
   const { data, error } = await supabaseAdmin
     .from("folder_shares")
     .insert(row as never)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as unknown as FolderShareRow;
+}
+
+/** Update an existing share link's settings */
+export async function updateFolderShare(
+  shareId: string,
+  opts: {
+    label?: string | null;
+    allowUpload?: boolean;
+    allowDownload?: boolean;
+    expiresAt?: string | null;
+  },
+): Promise<FolderShareRow> {
+  const updatePayload: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+  if (opts.label !== undefined) updatePayload.label = opts.label;
+  if (opts.allowUpload !== undefined) updatePayload.allow_upload = opts.allowUpload;
+  if (opts.allowDownload !== undefined) updatePayload.allow_download = opts.allowDownload;
+  if (opts.expiresAt !== undefined) updatePayload.expires_at = opts.expiresAt;
+
+  const { data, error } = await supabaseAdmin
+    .from("folder_shares")
+    .update(updatePayload as never)
+    .eq("id", shareId)
     .select("*")
     .single();
   if (error) throw error;

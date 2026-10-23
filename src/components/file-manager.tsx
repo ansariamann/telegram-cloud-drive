@@ -12,6 +12,7 @@ import {
   Music,
   FileText,
   Archive,
+  Cloud,
   File as FileIcon,
   Download,
   Trash2,
@@ -773,7 +774,7 @@ export function FileManager() {
 
           <div className="flex items-center gap-2.5 shrink-0">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/20 text-primary">
-              <Archive className="h-5 w-5" />
+              <Cloud className="h-5 w-5" />
             </div>
             <span className="text-lg font-bold tracking-tight hidden sm:inline">Vault</span>
           </div>
