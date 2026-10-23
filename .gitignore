@@ -15,12 +15,13 @@ dist-ssr
 .tanstack/**
 .nitro
 *.local
+.antigravity
 
 # Environment variables — never commit real secrets
 .env
 .env.*
 !.env.example
-
+.node_modules
 
 # Wrangler / Cloudflare
 .wrangler/

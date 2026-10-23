@@ -31,6 +31,7 @@ import {
   PackageOpen,
   AlertCircle,
   CheckCircle2,
+  Share2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +48,7 @@ import { FilePreview } from "@/components/file-preview";
 import { NewFolderDialog } from "@/components/new-folder-dialog";
 import { FolderPicker } from "@/components/folder-picker";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { ShareFolderDialog } from "@/components/share-folder-dialog";
 import { vaultFetch, vaultUrl, downloadFileById } from "@/lib/vault-client";
 import { toast as sonnerToast } from "sonner";
 
@@ -252,6 +254,7 @@ export function FileManager() {
   const [moveFileId, setMoveFileId] = useState<string | null>(null);
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   const [folderNewName, setFolderNewName] = useState("");
+  const [sharingFolder, setSharingFolder] = useState<{ id: string; name: string } | null>(null);
 
   // Confirm dialog state
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
@@ -945,6 +948,25 @@ export function FileManager() {
                   </button>
                 </span>
               ))}
+
+              {currentFolderId && breadcrumbs.length > 0 && (
+                <div className="ml-auto flex items-center pl-4 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setSharingFolder({
+                        id: currentFolderId,
+                        name: breadcrumbs[breadcrumbs.length - 1]?.name || "Folder",
+                      })
+                    }
+                    className="h-7 px-2.5 text-xs gap-1.5"
+                  >
+                    <Share2 className="h-3.5 w-3.5 text-primary" />
+                    Share Folder
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -987,6 +1009,7 @@ export function FileManager() {
                       }}
                       onDelete={() => setPendingDelete({ type: "folder", id: f.id, name: f.name })}
                       onDownload={() => handleFolderDownload(f.id, f.name)}
+                      onShare={() => setSharingFolder({ id: f.id, name: f.name })}
                       isDownloading={folderDownloading === f.id}
                       isRenaming={renamingFolderId === f.id}
                       renameName={folderNewName}
@@ -1462,6 +1485,18 @@ export function FileManager() {
           setPendingDelete(null);
         }}
       />
+
+      {/* Share folder dialog */}
+      {sharingFolder && (
+        <ShareFolderDialog
+          open={!!sharingFolder}
+          onOpenChange={(open) => {
+            if (!open) setSharingFolder(null);
+          }}
+          folderId={sharingFolder.id}
+          folderName={sharingFolder.name}
+        />
+      )}
     </div>
   );
 }
@@ -1530,6 +1565,7 @@ function FolderGridCard({
   onRename,
   onDelete,
   onDownload,
+  onShare,
   isDownloading,
   isRenaming,
   renameName,
@@ -1542,6 +1578,7 @@ function FolderGridCard({
   onRename: () => void;
   onDelete: () => void;
   onDownload: () => void;
+  onShare: () => void;
   isDownloading: boolean;
   isRenaming: boolean;
   renameName: string;
@@ -1594,6 +1631,10 @@ function FolderGridCard({
                 <Download className="h-4 w-4 mr-2" />
               )}
               {isDownloading ? "Preparing ZIP…" : "Download as ZIP"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onShare} className="py-2.5">
+              <Share2 className="h-4 w-4 mr-2" />
+              Share Folder
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onRename} className="py-2.5">
               <Pencil className="h-4 w-4 mr-2" />
@@ -1841,7 +1882,7 @@ function ListView({
               <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                 <div className="flex justify-end gap-1.5">
                   <button
-                    onClick={() => onDownloadFolder(f.id, f.name)}
+                    onClick={() => handleFolderDownload(f.id, f.name)}
                     disabled={folderDownloading === f.id}
                     className="h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50 transition-colors"
                     aria-label="Download folder as ZIP"
@@ -1852,6 +1893,14 @@ function ListView({
                     ) : (
                       <Download className="h-4 w-4" />
                     )}
+                  </button>
+                  <button
+                    onClick={() => setSharingFolder({ id: f.id, name: f.name })}
+                    className="h-9 w-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    aria-label="Share folder"
+                    title="Share folder"
+                  >
+                    <Share2 className="h-4 w-4" />
                   </button>
                   <button
                     onClick={() => onRenameFolder(f.id, f.name)}

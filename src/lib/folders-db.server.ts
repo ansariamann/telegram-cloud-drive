@@ -62,3 +62,35 @@ export async function getFolderBreadcrumbs(id: string): Promise<FolderRow[]> {
   }
   return crumbs;
 }
+
+/** Check if folderId is equal to or a descendant of ancestorId */
+export async function isFolderDescendantOf(folderId: string, ancestorId: string): Promise<boolean> {
+  if (folderId === ancestorId) return true;
+  let currentId: string | null = folderId;
+  let depth = 0;
+  while (currentId && depth < 50) {
+    depth++;
+    const folder = await getFolder(currentId);
+    if (!folder || !folder.parent_id) return false;
+    if (folder.parent_id === ancestorId) return true;
+    currentId = folder.parent_id;
+  }
+  return false;
+}
+
+/** Get breadcrumbs starting from rootFolderId down to currentFolderId */
+export async function getShareBreadcrumbs(currentFolderId: string, rootFolderId: string): Promise<FolderRow[]> {
+  const crumbs: FolderRow[] = [];
+  let currentId: string | null = currentFolderId;
+  let depth = 0;
+  while (currentId && depth < 50) {
+    depth++;
+    const folder = await getFolder(currentId);
+    if (!folder) break;
+    crumbs.unshift(folder);
+    if (folder.id === rootFolderId) break;
+    currentId = folder.parent_id;
+  }
+  return crumbs;
+}
+
