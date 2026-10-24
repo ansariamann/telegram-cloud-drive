@@ -633,13 +633,18 @@ public class ShareController {
     /**
      * Uploads bytes to Telegram and returns {file_id, message_id, thumb_file_id}.
      */
+    // Shared HttpClient for all Telegram upload requests (reused, not re-created per chunk)
+    private static final java.net.http.HttpClient UPLOAD_HTTP_CLIENT = java.net.http.HttpClient.newBuilder()
+            .connectTimeout(java.time.Duration.ofSeconds(30))
+            .build();
+    private static final int UPLOAD_MAX_RETRIES = 3;
+
     private Map<String, Object> sendFileToTelegram(byte[] bytes, String filename, String mime,
                                                      String caption, boolean forceDocument)
             throws IOException, InterruptedException {
 
         // Use multipart/form-data to call Telegram sendDocument/sendPhoto/etc.
-        String method = forceDocument ? "sendDocument"
-                : pickSendMethod(mime);
+        String method = forceDocument ? "sendDocument" : pickSendMethod(mime);
         String fieldName = switch (method) {
             case "sendPhoto" -> "photo";
             case "sendVideo" -> "video";
@@ -647,40 +652,72 @@ public class ShareController {
             default -> "document";
         };
 
-        // Build multipart request manually using Java HttpClient
         String chatId = telegram.getChatId();
-        String boundary = "----VaultBoundary" + System.nanoTime();
         String token = System.getProperty("TELEGRAM_BOT_TOKEN");
         String url = "https://api.telegram.org/bot" + token + "/" + method;
 
-        byte[] body = buildMultipart(boundary, chatId, caption, fieldName, filename, mime, bytes);
+        IOException lastErr = null;
+        for (int attempt = 0; attempt < UPLOAD_MAX_RETRIES; attempt++) {
+            String boundary = "----VaultBoundary" + System.nanoTime();
+            byte[] body = buildMultipart(boundary, chatId, caption, fieldName, filename, mime, bytes);
 
-        java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
-        java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder()
-                .uri(java.net.URI.create(url))
-                .timeout(java.time.Duration.ofSeconds(120))
-                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-                .POST(java.net.http.HttpRequest.BodyPublishers.ofByteArray(body))
-                .build();
+            java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(url))
+                    .timeout(java.time.Duration.ofSeconds(120))
+                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                    .POST(java.net.http.HttpRequest.BodyPublishers.ofByteArray(body))
+                    .build();
 
-        java.net.http.HttpResponse<String> resp = client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
-        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-        com.fasterxml.jackson.databind.JsonNode json = mapper.readTree(resp.body());
+            try {
+                java.net.http.HttpResponse<String> resp = UPLOAD_HTTP_CLIENT.send(
+                        req, java.net.http.HttpResponse.BodyHandlers.ofString());
+                com.fasterxml.jackson.databind.JsonNode json =
+                        new com.fasterxml.jackson.databind.ObjectMapper().readTree(resp.body());
 
-        if (!json.path("ok").asBoolean()) {
-            throw new IOException("Telegram " + method + " failed: " + json.path("description").asText());
+                if (!json.path("ok").asBoolean()) {
+                    int errorCode = json.path("error_code").asInt();
+                    String description = json.path("description").asText();
+
+                    // 429 rate-limit: honour retry_after
+                    if (errorCode == 429 && attempt < UPLOAD_MAX_RETRIES - 1) {
+                        long retryAfter = json.path("parameters").path("retry_after").asLong(3) * 1000
+                                + (long) (Math.random() * 500);
+                        log.warn("Telegram 429 on chunk upload, retrying after {}ms (attempt {})", retryAfter, attempt + 1);
+                        Thread.sleep(retryAfter);
+                        continue;
+                    }
+                    // 5xx server errors: exponential back-off
+                    if (resp.statusCode() >= 500 && attempt < UPLOAD_MAX_RETRIES - 1) {
+                        long backoff = 1000L * (long) Math.pow(2, attempt) + (long) (Math.random() * 500);
+                        log.warn("Telegram {}  on chunk upload, backing off {}ms (attempt {})",
+                                resp.statusCode(), backoff, attempt + 1);
+                        Thread.sleep(backoff);
+                        continue;
+                    }
+                    throw new IOException("Telegram " + method + " failed: " + description);
+                }
+
+                com.fasterxml.jackson.databind.JsonNode result = json.path("result");
+                long messageId = result.path("message_id").asLong();
+                String fileId = extractFileId(result, fieldName);
+                String thumbFileId = extractThumbId(result);
+
+                Map<String, Object> out = new HashMap<>();
+                out.put("file_id", fileId);
+                out.put("message_id", messageId);
+                out.put("thumb_file_id", thumbFileId);
+                return out;
+
+            } catch (IOException e) {
+                lastErr = e;
+                if (attempt < UPLOAD_MAX_RETRIES - 1) {
+                    long backoff = 1200L * (attempt + 1) + (long) (Math.random() * 500);
+                    log.warn("Chunk upload IOException on attempt {}, retrying in {}ms: {}", attempt + 1, backoff, e.getMessage());
+                    Thread.sleep(backoff);
+                }
+            }
         }
-
-        com.fasterxml.jackson.databind.JsonNode result = json.path("result");
-        long messageId = result.path("message_id").asLong();
-        String fileId = extractFileId(result, fieldName);
-        String thumbFileId = extractThumbId(result);
-
-        Map<String, Object> out = new HashMap<>();
-        out.put("file_id", fileId);
-        out.put("message_id", messageId);
-        out.put("thumb_file_id", thumbFileId);
-        return out;
+        throw lastErr != null ? lastErr : new IOException("Telegram " + method + " failed after " + UPLOAD_MAX_RETRIES + " attempts");
     }
 
     private String extractFileId(com.fasterxml.jackson.databind.JsonNode result, String fieldName) {

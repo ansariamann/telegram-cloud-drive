@@ -1,11 +1,19 @@
 server:
   port: 8080
+  # Allow large chunks + multipart overhead
+  tomcat:
+    max-http-form-post-size: 100MB
 
 spring:
   application:
     name: telegram-vault-backend
   jackson:
     default-property-inclusion: non_null
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 100MB     # generous limit for chunks/files
+      max-request-size: 100MB  # whole request limit
 
 # All sensitive config comes from environment variables / .env file
 # TELEGRAM_BOT_TOKEN=
