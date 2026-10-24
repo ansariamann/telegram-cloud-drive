@@ -40,7 +40,10 @@ export default function App() {
     <>
       <Routes>
         <Route path="/unlock" element={<Unlock />} />
+        <Route path="/share/:token" element={<ShareTokenPage />} />
         <Route path="/share/:token/*" element={<ShareTokenPage />} />
+        <Route path="/shares/:token" element={<ShareTokenPage />} />
+        <Route path="/shares/:token/*" element={<ShareTokenPage />} />
         <Route path="/settings" element={<AuthGuard><Settings /></AuthGuard>} />
         <Route path="/" element={<AuthGuard><FileManager /></AuthGuard>} />
         <Route path="*" element={<NotFound />} />

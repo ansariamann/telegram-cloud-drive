@@ -15,6 +15,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 /**
@@ -68,42 +70,126 @@ public class ShareController {
 
         if (!auth.isUnlocked(request)) return ResponseEntity.status(401).body(Map.of("error", "locked"));
         try {
-            // If shareId provided, update; otherwise create
-            String action = (String) body.getOrDefault("action", "create");
-            if ("revoke".equals(action)) {
-                String shareId = (String) body.get("share_id");
-                sharesDb.revokeFolderShare(shareId);
-                return ResponseEntity.ok(Map.of("ok", true));
-            }
-            if ("update".equals(action)) {
-                String shareId = (String) body.get("share_id");
-                Map<String, Object> opts = new HashMap<>();
-                if (body.containsKey("label")) opts.put("label", body.get("label"));
-                if (body.containsKey("allow_upload")) opts.put("allow_upload", body.get("allow_upload"));
-                if (body.containsKey("allow_download")) opts.put("allow_download", body.get("allow_download"));
-                if (body.containsKey("expires_at")) opts.put("expires_at", body.get("expires_at"));
-                FolderShareRow updated = sharesDb.updateFolderShare(shareId, opts);
-                return ResponseEntity.ok(updated);
-            }
-            // Create
             FolderRow folder = foldersDb.getFolder(id);
             if (folder == null) return ResponseEntity.notFound().build();
 
-            // Prevent duplicate active shares
-            FolderShareRow existing = sharesDb.getActiveFolderShare(id);
-            if (existing != null) {
-                return ResponseEntity.status(409).body(Map.of("error", "SHARE_EXISTS", "share", existing));
-            }
-
+            boolean forceNew = Boolean.TRUE.equals(body.get("force_new"));
             boolean allowUpload = Boolean.TRUE.equals(body.getOrDefault("allow_upload", true));
             boolean allowDownload = Boolean.TRUE.equals(body.getOrDefault("allow_download", true));
             String label = (String) body.get("label");
+
+            String expiresIn = (String) body.get("expires_in");
             String expiresAt = (String) body.get("expires_at");
+            if (expiresIn != null && !expiresIn.equals("never")) {
+                long hours = switch (expiresIn) {
+                    case "24h" -> 24L;
+                    case "7d" -> 7L * 24;
+                    case "30d" -> 30L * 24;
+                    default -> 0L;
+                };
+                if (hours > 0) {
+                    expiresAt = Instant.now().plus(hours, ChronoUnit.HOURS).toString();
+                }
+            } else if ("never".equals(expiresIn)) {
+                expiresAt = null;
+            }
+
+            if (!forceNew) {
+                FolderShareRow existing = sharesDb.getActiveFolderShare(id);
+                if (existing != null) {
+                    Map<String, Object> opts = new HashMap<>();
+                    if (label != null) opts.put("label", label);
+                    opts.put("allow_upload", allowUpload);
+                    opts.put("allow_download", allowDownload);
+                    if (expiresIn != null || body.containsKey("expires_at")) {
+                        opts.put("expires_at", expiresAt);
+                    }
+                    FolderShareRow updated = sharesDb.updateFolderShare(existing.getId(), opts);
+                    return ResponseEntity.ok(Map.of("share", updated != null ? updated : existing, "reused", true));
+                }
+            }
 
             FolderShareRow share = sharesDb.createFolderShare(id, label, allowUpload, allowDownload, expiresAt);
-            return ResponseEntity.ok(share);
+            return ResponseEntity.ok(Map.of("share", share, "reused", false));
         } catch (Exception e) {
             log.error("createOrUpdateShare error", e);
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PatchMapping("/api/folders/{id}/share")
+    public ResponseEntity<?> patchShare(
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body,
+            HttpServletRequest request) {
+
+        if (!auth.isUnlocked(request)) return ResponseEntity.status(401).body(Map.of("error", "locked"));
+        try {
+            String shareId = (String) body.get("shareId");
+            if (shareId == null) shareId = (String) body.get("share_id");
+            if (shareId == null) return ResponseEntity.badRequest().body(Map.of("error", "shareId required"));
+
+            FolderShareRow share = sharesDb.getFolderShare(shareId);
+            if (share == null || !id.equals(share.getFolderId())) {
+                return ResponseEntity.status(404).body(Map.of("error", "Share not found"));
+            }
+
+            Map<String, Object> opts = new HashMap<>();
+            if (body.containsKey("label")) opts.put("label", body.get("label"));
+            if (body.containsKey("allow_upload")) opts.put("allow_upload", body.get("allow_upload"));
+            if (body.containsKey("allow_download")) opts.put("allow_download", body.get("allow_download"));
+
+            String expiresIn = (String) body.get("expires_in");
+            if (expiresIn != null) {
+                if ("never".equals(expiresIn)) {
+                    opts.put("expires_at", null);
+                } else {
+                    long hours = switch (expiresIn) {
+                        case "24h" -> 24L;
+                        case "7d" -> 7L * 24;
+                        case "30d" -> 30L * 24;
+                        default -> 0L;
+                    };
+                    if (hours > 0) {
+                        opts.put("expires_at", Instant.now().plus(hours, ChronoUnit.HOURS).toString());
+                    }
+                }
+            } else if (body.containsKey("expires_at")) {
+                opts.put("expires_at", body.get("expires_at"));
+            }
+
+            FolderShareRow updated = sharesDb.updateFolderShare(shareId, opts);
+            return ResponseEntity.ok(Map.of("share", updated != null ? updated : share));
+        } catch (Exception e) {
+            log.error("patchShare error", e);
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/api/folders/{id}/share")
+    public ResponseEntity<?> revokeShare(
+            @PathVariable String id,
+            @RequestParam(name = "shareId", required = false) String shareIdParam,
+            @RequestBody(required = false) Map<String, Object> body,
+            HttpServletRequest request) {
+
+        if (!auth.isUnlocked(request)) return ResponseEntity.status(401).body(Map.of("error", "locked"));
+        try {
+            String shareId = shareIdParam;
+            if (shareId == null && body != null) {
+                shareId = (String) body.get("share_id");
+                if (shareId == null) shareId = (String) body.get("shareId");
+            }
+            if (shareId == null) return ResponseEntity.badRequest().body(Map.of("error", "shareId required"));
+
+            FolderShareRow share = sharesDb.getFolderShare(shareId);
+            if (share == null || !id.equals(share.getFolderId())) {
+                return ResponseEntity.status(404).body(Map.of("error", "Share not found"));
+            }
+            sharesDb.revokeFolderShare(shareId);
+            return ResponseEntity.ok(Map.of("ok", true));
+        } catch (Exception e) {
+            log.error("revokeShare error", e);
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }
     }
@@ -174,20 +260,61 @@ public class ShareController {
     // ─── Share token endpoints ────────────────────────────────────────────────
 
     @GetMapping("/api/shares/{token}")
-    public ResponseEntity<?> getShare(@PathVariable String token) {
+    public ResponseEntity<?> getShare(
+            @PathVariable String token,
+            @RequestParam(name = "folder_id", required = false) String folderIdParam,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String kind,
+            @RequestParam(required = false) String sort) {
         try {
             FolderShareRow share = sharesDb.validateShareToken(token);
             if (share == null) return ResponseEntity.status(404).body(Map.of("error", "share not found or expired"));
-            FolderRow folder = foldersDb.getFolder(share.getFolderId());
-            List<FileRow> files = filesDb.listFiles(null, null, "created_desc", share.getFolderId(), false);
-            List<FolderRow> subFolders = foldersDb.listFolders(share.getFolderId(), false);
-            return ResponseEntity.ok(Map.of(
-                    "share", share,
-                    "folder", folder != null ? folder : Map.of(),
-                    "files", files,
-                    "subFolders", subFolders
+            FolderRow rootFolder = foldersDb.getFolder(share.getFolderId());
+            if (rootFolder == null) return ResponseEntity.status(404).body(Map.of("error", "root folder not found"));
+
+            String targetFolderId = share.getFolderId();
+            if (folderIdParam != null && !folderIdParam.isBlank() && !"root".equals(folderIdParam) && !folderIdParam.equals(share.getFolderId())) {
+                if (foldersDb.isFolderDescendantOf(folderIdParam, share.getFolderId())) {
+                    targetFolderId = folderIdParam;
+                }
+            }
+
+            FolderRow currentFolder = foldersDb.getFolder(targetFolderId);
+            if (currentFolder == null) return ResponseEntity.status(404).body(Map.of("error", "folder not found"));
+
+            List<FolderRow> breadcrumbs = foldersDb.getShareBreadcrumbs(targetFolderId, share.getFolderId());
+
+            boolean isSearching = q != null && !q.isBlank();
+            boolean isFilteringKind = kind != null && !kind.isBlank() && !"all".equalsIgnoreCase(kind);
+
+            List<FolderRow> folders = (!isSearching && !isFilteringKind)
+                    ? foldersDb.listFolders(targetFolderId, false)
+                    : List.of();
+
+            String sortKey = (sort != null && !sort.isBlank()) ? sort : "created_desc";
+            List<FileRow> files = filesDb.listFiles(q, kind, sortKey, targetFolderId, false);
+
+            List<Map<String, String>> crumbList = breadcrumbs.stream()
+                    .map(b -> Map.of("id", b.getId(), "name", b.getName()))
+                    .toList();
+
+            Map<String, Object> resp = new LinkedHashMap<>();
+            resp.put("rootFolder", Map.of("id", rootFolder.getId(), "name", rootFolder.getName()));
+            resp.put("currentFolder", Map.of("id", currentFolder.getId(), "name", currentFolder.getName()));
+            resp.put("folder", Map.of("id", currentFolder.getId(), "name", currentFolder.getName()));
+            resp.put("breadcrumbs", crumbList);
+            resp.put("permissions", Map.of(
+                    "allow_upload", share.isAllowUpload(),
+                    "allow_download", share.isAllowDownload()
             ));
+            resp.put("expires_at", share.getExpiresAt());
+            resp.put("folders", folders);
+            resp.put("files", files);
+            resp.put("share", share);
+
+            return ResponseEntity.ok(resp);
         } catch (Exception e) {
+            log.error("getShare error", e);
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }
     }
@@ -363,7 +490,7 @@ public class ShareController {
     @PostMapping("/api/shares/{token}/download-zip")
     public void sharedDownloadZip(
             @PathVariable String token,
-            @RequestBody Map<String, Object> body,
+            @RequestBody(required = false) Map<String, Object> body,
             HttpServletResponse response) throws IOException {
 
         try {
@@ -372,28 +499,61 @@ public class ShareController {
                 response.sendError(403, "not allowed");
                 return;
             }
+
             @SuppressWarnings("unchecked")
-            List<String> ids = (List<String>) body.get("ids");
-            if (ids == null || ids.isEmpty()) {
-                response.sendError(400, "ids required");
-                return;
-            }
-            ids = ids.stream().limit(100).toList();
+            List<String> ids = body != null ? (List<String>) body.get("ids") : null;
+            String folderId = body != null ? (String) body.get("folderId") : null;
 
             List<FileRow> files = new ArrayList<>();
-            for (String fileId : ids) {
-                FileRow f = filesDb.getFile(fileId);
-                if (f != null && isFolderInShareTree(f.getFolderId(), share.getFolderId())) {
-                    files.add(f);
+            String zipArchiveName = "shared-download.zip";
+
+            if (ids != null && !ids.isEmpty()) {
+                ids = ids.stream().limit(200).toList();
+                for (String fileId : ids) {
+                    FileRow f = filesDb.getFile(fileId);
+                    if (f != null && isFolderInShareTree(f.getFolderId(), share.getFolderId())) {
+                        files.add(f);
+                    }
+                }
+                FolderRow rootFolder = foldersDb.getFolder(share.getFolderId());
+                if (rootFolder != null) {
+                    zipArchiveName = rootFolder.getName() + "-" + files.size() + "-files.zip";
+                }
+            } else {
+                // Folder download (target folderId or default to share root)
+                String targetFolderId = (folderId != null && !folderId.isBlank()) ? folderId : share.getFolderId();
+                if (!isFolderInShareTree(targetFolderId, share.getFolderId())) {
+                    response.sendError(403, "forbidden");
+                    return;
+                }
+                FolderRow targetFolder = foldersDb.getFolder(targetFolderId);
+                if (targetFolder != null) {
+                    zipArchiveName = targetFolder.getName() + ".zip";
+                }
+
+                // Collect files recursively within this folder
+                List<String> queue = new ArrayList<>();
+                queue.add(targetFolderId);
+                int safetyLimit = 50;
+                while (!queue.isEmpty() && safetyLimit-- > 0 && files.size() < 500) {
+                    String curr = queue.remove(0);
+                    List<FileRow> fList = filesDb.listFiles(null, null, "created_desc", curr, false);
+                    files.addAll(fList);
+                    List<FolderRow> subFolders = foldersDb.listFolders(curr, false);
+                    for (FolderRow sf : subFolders) {
+                        queue.add(sf.getId());
+                    }
                 }
             }
+
             if (files.isEmpty()) {
                 response.sendError(404, "no files found");
                 return;
             }
 
+            String safeZipName = zipArchiveName.replaceAll("[\"\\\\]", "_");
             response.setContentType("application/zip");
-            response.setHeader("Content-Disposition", "attachment; filename=\"shared-download.zip\"");
+            response.setHeader("Content-Disposition", "attachment; filename=\"" + safeZipName + "\"");
             response.setHeader("Cache-Control", "no-store");
 
             try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(response.getOutputStream())) {
