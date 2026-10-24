@@ -32,10 +32,12 @@ public class FolderController {
 
         if (!auth.isUnlocked(request)) return ResponseEntity.status(401).body(Map.of("error", "locked"));
         try {
-            boolean parentIsNull = parentId == null || parentId.equals("null") || parentId.isBlank();
+            // "root", "null", blank all mean top-level (parent_id IS NULL)
+            boolean parentIsNull = parentId == null || parentId.equals("null") || parentId.equals("root") || parentId.isBlank();
             String resolvedParent = parentIsNull ? null : parentId;
             List<FolderRow> folders = foldersDb.listFolders(resolvedParent, parentIsNull);
-            return ResponseEntity.ok(folders);
+            // Wrap in {folders:[...]} to match what the React frontend expects
+            return ResponseEntity.ok(Map.of("folders", folders));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }

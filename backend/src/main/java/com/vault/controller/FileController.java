@@ -52,14 +52,16 @@ public class FileController {
 
         if (!auth.isUnlocked(request)) return ResponseEntity.status(401).body(Map.of("error", "locked"));
         try {
-            boolean isNull = folderId != null && folderId.equals("null");
-            String resolvedFolderId = isNull ? null : folderId;
-            boolean folderIdIsNull = isNull || (folderId != null && folderId.isBlank());
-            // If folder_id param exists but is empty/null-string → show root
-            boolean useNull = folderId != null;
+            // "root" and "null" both mean the root level (folder_id IS NULL)
+            boolean isRoot = folderId == null || folderId.equals("root") || folderId.equals("null") || folderId.isBlank();
+            String resolvedFolderId = isRoot ? null : folderId;
+            // When searching (q is set) return all folders, don't filter by folder
+            boolean applyFolderFilter = (q == null || q.isBlank());
+            boolean filterByNull = applyFolderFilter && isRoot;
 
-            List<FileRow> files = filesDb.listFiles(q, kind, sort, resolvedFolderId, useNull && isNull);
-            return ResponseEntity.ok(files);
+            List<FileRow> files = filesDb.listFiles(q, kind, sort, resolvedFolderId, filterByNull);
+            // Wrap in {files:[...]} to match what the React frontend expects
+            return ResponseEntity.ok(Map.of("files", files));
         } catch (Exception e) {
             log.error("listFiles error", e);
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
