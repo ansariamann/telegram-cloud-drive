@@ -98,7 +98,10 @@ export const Route = createFileRoute("/api/shares/$token/download-zip")({
         const seenPaths = new Map<string, number>();
         const safeZipPaths = itemsToZip.map((item) => {
           const parts = item.zipPath.split("/");
-          const baseName = parts[parts.length - 1].replace(/[\\/:*?"<>|]/g, "_");
+          const baseName = parts[parts.length - 1]
+            .replace(/\.\.([\/\\]|$)/g, "_")  // strip ../  ..\  or trailing ..
+            .replace(/^[\/\\]+/, "")           // strip leading slashes
+            .replace(/[\\/:*?"<>|]/g, "_");   // sanitize illegal filename chars
           const dirPath = parts.slice(0, -1).join("/");
           const fullKey = dirPath ? `${dirPath}/${baseName}` : baseName;
 

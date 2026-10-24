@@ -22,7 +22,9 @@ export function verifyFileToken(token: string, fileId: string): boolean {
     const a = Buffer.from(sig);
     const b = Buffer.from(expected);
     if (a.length !== b.length || !timingSafeEqual(a, b)) return false;
-    const [tokFileId, expStr] = payload.split(":");
+    const parts = payload.split(":");
+    if (parts.length !== 2) return false;
+    const [tokFileId, expStr] = parts;
     if (tokFileId !== fileId) return false;
     const exp = Number(expStr);
     if (!Number.isFinite(exp) || Date.now() > exp) return false;

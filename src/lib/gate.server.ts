@@ -55,7 +55,9 @@ function getRequestSession(): string | null {
     const request = getRequest();
     const auth = request.headers.get("authorization") ?? "";
     if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
-    return new URL(request.url).searchParams.get("t");
+    // NOTE: Do NOT fall back to URL query params — session tokens in URLs
+    // are logged by proxies/servers and leak via Referer headers.
+    return null;
   } catch {
     return null;
   }

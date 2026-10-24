@@ -28,7 +28,11 @@ export const Route = createFileRoute("/api/files/download-zip")({
         // Deduplicate filenames
         const seen = new Map<string, number>();
         const safeNames = fileRows.map((f) => {
-          const base = f!.filename.replace(/[\\/:*?"<>|]/g, "_");
+          // Strip path-traversal sequences, then sanitize special chars
+          const base = f!.filename
+            .replace(/\.\.([\/\\]|$)/g, "_")  // strip ../  ..\  or trailing ..
+            .replace(/^[\/\\]+/, "")           // strip leading slashes
+            .replace(/[\\/:*?"<>|]/g, "_");   // sanitize illegal filename chars
           const count = seen.get(base) ?? 0;
           seen.set(base, count + 1);
           if (count === 0) return base;

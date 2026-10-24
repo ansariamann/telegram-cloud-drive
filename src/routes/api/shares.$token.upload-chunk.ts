@@ -24,6 +24,14 @@ export const Route = createFileRoute("/api/shares/$token/upload-chunk")({
               headers: { "content-type": "application/json" },
             });
           }
+          // Enforce max chunk size (20 MB) to prevent DoS and runaway Telegram API costs
+          const MAX_CHUNK_BYTES = 20 * 1024 * 1024;
+          if ((blob as Blob).size > MAX_CHUNK_BYTES) {
+            return new Response(JSON.stringify({ error: "chunk too large (max 20 MB)" }), {
+              status: 413,
+              headers: { "content-type": "application/json" },
+            });
+          }
 
           const bytes = await (blob as Blob).arrayBuffer();
           const forceDocument = totalParts > 1;
