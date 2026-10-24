@@ -38,6 +38,17 @@ dist-ssr
 *.sln
 *.sw?
 
+# Java / Maven
+target/
+**/target/
+.maven/
+**/.maven/
+*.class
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
 
 
 

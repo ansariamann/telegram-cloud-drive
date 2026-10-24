@@ -1,0 +1,5 @@
+target/
+.maven/
+*.class
+.env
+.env.*
