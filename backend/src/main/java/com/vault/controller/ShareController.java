@@ -203,10 +203,34 @@ public class ShareController {
 
         if (!auth.isUnlocked(request)) return ResponseEntity.status(401).body(Map.of("error", "locked"));
         try {
-            String filename = (String) body.get("filename");
-            long size = ((Number) body.get("size")).longValue();
             String folderId = (String) body.get("folder_id");
-            boolean folderIdIsNull = folderId == null || folderId.equals("null");
+            boolean folderIdIsNull = folderId == null || folderId.equals("null") || folderId.isBlank();
+
+            if (body.containsKey("files")) {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> files = (List<Map<String, Object>>) body.get("files");
+                List<Integer> duplicateIndexes = new ArrayList<>();
+                if (files != null) {
+                    for (int i = 0; i < files.size(); i++) {
+                        Map<String, Object> fileInfo = files.get(i);
+                        if (fileInfo == null) continue;
+                        String fname = (String) fileInfo.get("filename");
+                        Number sizeNum = (Number) fileInfo.get("size");
+                        long fsize = sizeNum != null ? sizeNum.longValue() : 0L;
+                        if (fname != null) {
+                            FileRow dup = filesDb.findDuplicateFile(fname, fsize, folderIdIsNull ? null : folderId, folderIdIsNull);
+                            if (dup != null) {
+                                duplicateIndexes.add(i);
+                            }
+                        }
+                    }
+                }
+                return ResponseEntity.ok(Map.of("duplicateIndexes", duplicateIndexes));
+            }
+
+            String filename = (String) body.get("filename");
+            Number sizeNum = (Number) body.get("size");
+            long size = sizeNum != null ? sizeNum.longValue() : 0L;
 
             FileRow duplicate = filesDb.findDuplicateFile(filename, size, folderIdIsNull ? null : folderId, folderIdIsNull);
             if (duplicate != null) {
@@ -218,7 +242,8 @@ public class ShareController {
             }
             return ResponseEntity.ok(Map.of("ok", true));
         } catch (Exception e) {
-            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+            log.error("uploadCheck error", e);
+            return ResponseEntity.status(500).body(errorMap(e));
         }
     }
 
@@ -401,10 +426,34 @@ public class ShareController {
             FolderShareRow share = sharesDb.validateShareToken(token);
             if (share == null || !share.isAllowUpload()) return ResponseEntity.status(403).body(Map.of("error", "not allowed"));
 
-            String filename = (String) body.get("filename");
-            long size = ((Number) body.get("size")).longValue();
             String folderId = (String) body.getOrDefault("folder_id", share.getFolderId());
-            boolean folderIdIsNull = folderId == null || folderId.equals("null");
+            boolean folderIdIsNull = folderId == null || folderId.equals("null") || folderId.isBlank();
+
+            if (body.containsKey("files")) {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> files = (List<Map<String, Object>>) body.get("files");
+                List<Integer> duplicateIndexes = new ArrayList<>();
+                if (files != null) {
+                    for (int i = 0; i < files.size(); i++) {
+                        Map<String, Object> fileInfo = files.get(i);
+                        if (fileInfo == null) continue;
+                        String fname = (String) fileInfo.get("filename");
+                        Number sizeNum = (Number) fileInfo.get("size");
+                        long fsize = sizeNum != null ? sizeNum.longValue() : 0L;
+                        if (fname != null) {
+                            FileRow dup = filesDb.findDuplicateFile(fname, fsize, folderIdIsNull ? null : folderId, folderIdIsNull);
+                            if (dup != null) {
+                                duplicateIndexes.add(i);
+                            }
+                        }
+                    }
+                }
+                return ResponseEntity.ok(Map.of("duplicateIndexes", duplicateIndexes));
+            }
+
+            String filename = (String) body.get("filename");
+            Number sizeNum = (Number) body.get("size");
+            long size = sizeNum != null ? sizeNum.longValue() : 0L;
 
             FileRow duplicate = filesDb.findDuplicateFile(filename, size, folderIdIsNull ? null : folderId, folderIdIsNull);
             if (duplicate != null) {
@@ -412,7 +461,8 @@ public class ShareController {
             }
             return ResponseEntity.ok(Map.of("ok", true));
         } catch (Exception e) {
-            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+            log.error("sharedUploadCheck error", e);
+            return ResponseEntity.status(500).body(errorMap(e));
         }
     }
 
@@ -778,5 +828,10 @@ public class ShareController {
         int dot = filename.lastIndexOf('.');
         if (dot > 0) return filename.substring(0, dot) + suffix + filename.substring(dot);
         return filename + suffix;
+    }
+
+    private Map<String, Object> errorMap(Exception e) {
+        String msg = e.getMessage();
+        return Map.of("error", msg != null ? msg : e.getClass().getSimpleName());
     }
 }
